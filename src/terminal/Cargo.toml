@@ -1,0 +1,11 @@
+[package]
+name = "terminal"
+version = "0.0.1"
+edition = "2021"
+
+[dependencies]
+bytemuck = { workspace = true, features = ["derive" ] }
+cgmath = { workspace = true, features = ["bytemuck"] }
+vt100 = { version = "0.0.1", path = "../vt100" }
+log = { workspace = true }
+bitflags = { version = "2.4.2" }

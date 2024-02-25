@@ -1,0 +1,10 @@
+[package]
+name = "glyph_grid"
+version = "0.0.1"
+edition = "2021"
+
+[dependencies]
+bytemuck = { workspace = true, features = ["derive" ] }
+cgmath = { workspace = true, features = ["bytemuck"] }
+log = { workspace = true }
+fontdue = { workspace = true }

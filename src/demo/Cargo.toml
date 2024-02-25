@@ -1,0 +1,24 @@
+[package]
+name = "wgpu_terminal"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+bytemuck = { workspace = true, features = ["derive" ] }
+cgmath = { workspace = true, features = ["bytemuck"] }
+# terminal
+terminal = { version = "0.0.1", path = "../terminal" }
+conpty = { version = "0.5.1" }
+# graphics
+fontdue = { workspace = true }
+glyph_grid = { version = "0.0.1", path = "../glyph_grid" }
+glyph_grid_renderer = { version = "0.0.1", path = "../glyph_grid_renderer" }
+wgpu = { workspace = true }
+winit = { version = "0.29.0" }
+# logging
+log = { workspace = true }
+simple_logger = { version = "4.3.3", features = ["colors", "threads", "stderr"] }
+# executable
+clap = { version = "4.5.1", features = ["derive"] }
+pollster = { version = "0.3.0" }
+anyhow = { version = "1.0.80" }

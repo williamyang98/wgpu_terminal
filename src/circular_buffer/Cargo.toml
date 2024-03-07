@@ -1,0 +1,19 @@
+[package]
+name = "circular_buffer"
+version = "0.0.1"
+edition = "2021"
+
+[dependencies]
+log = { version = "0.4.20" }
+
+[dev-dependencies]
+test-log = "0.2.15"
+
+[dependencies.windows]
+version = "0.53.0"
+features = [
+    "Win32_Foundation", 
+    "Win32_System_Memory",
+    "Win32_Security",
+    "Win32_System_SystemInformation",
+]

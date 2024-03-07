@@ -28,6 +28,8 @@ pub struct CircularBuffer<T> {
     len: usize,
 }
 
+unsafe impl<T> Send for CircularBuffer<T> {}
+
 impl<T> CircularBuffer<T> {
     // Cannot allocate a circular buffer without virtual memory backing it
     #[allow(clippy::len_without_is_empty)]

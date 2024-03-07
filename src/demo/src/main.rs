@@ -68,7 +68,7 @@ fn start_conpty(args: &Args) -> anyhow::Result<()> {
         process: &mut process,
         pipe_input: &mut pipe_input,
     };
-    let terminal = Arc::new(Mutex::new(Terminal::new(Vector2::new(128,128))));
+    let terminal = Arc::new(Mutex::new(Terminal::default()));
     let pipe_output_thread = std::thread::spawn({
         let terminal = terminal.clone();
         let args = args.clone();
@@ -92,7 +92,7 @@ fn start_raw_shell(args: &Args) -> anyhow::Result<()> {
     let mut process = command.spawn()?;
     let mut pipe_input = process.stdin.take().ok_or("Failed to get pipe.stdin").map_err(anyhow::Error::msg)?;
     let mut pipe_output = process.stdout.take().ok_or("Failed to get pipe.stdout").map_err(anyhow::Error::msg)?;
-    let terminal = Arc::new(Mutex::new(Terminal::new(Vector2::new(128,128))));
+    let terminal = Arc::new(Mutex::new(Terminal::default()));
     let pipe_output_thread = std::thread::spawn({
         let terminal = terminal.clone();
         let args = args.clone();

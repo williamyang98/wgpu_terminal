@@ -17,8 +17,8 @@ pub struct Viewport {
     pen: Pen,
     cells: Vec<Cell>,
     row_status: Vec<LineStatus>,
-    _old_cells: Vec<Cell>, // when we resize we swap and copy
-    _old_row_status: Vec<LineStatus>,
+    resize_cells: Vec<Cell>,
+    resize_row_status: Vec<LineStatus>,
     scrollback_buffer: ScrollbackBuffer, // eject lines into scrollback buffer
 }
 
@@ -34,8 +34,8 @@ impl Default for Viewport {
             pen: Pen::default(),
             cells: vec![Cell::default(); total_cells],
             row_status: vec![LineStatus::default(); DEFAULT_VIEWPORT_SIZE.y],
-            _old_cells: vec![Cell::default(); total_cells],
-            _old_row_status: vec![LineStatus::default(); DEFAULT_VIEWPORT_SIZE.y],
+            resize_cells: vec![Cell::default(); total_cells],
+            resize_row_status: vec![LineStatus::default(); DEFAULT_VIEWPORT_SIZE.y],
             scrollback_buffer: ScrollbackBuffer::default(),
         }
     }
@@ -46,65 +46,49 @@ impl Viewport {
         &self.scrollback_buffer
     }
 
-    pub fn set_size(&mut self, size: Vector2<usize>) {
-        assert!(size.x > 1);
-        assert!(size.y > 0);
-        if size == self.size {
+    pub fn set_size(&mut self, new_size: Vector2<usize>) {
+        assert!(new_size.x > 1);
+        assert!(new_size.y > 0);
+        if new_size == self.size {
             return;
         }
-        let total_cells = size.x*size.y;
-        self._old_cells.resize(total_cells, Cell::default());
-        self._old_cells.fill(Cell::default());
-        self._old_row_status.resize(size.y, LineStatus::default());
-        self._old_row_status.fill(LineStatus::default());
-        // copy by rerendering each line including breaks or wrapping if it doesnt fit
-        let mut dst_cursor: Vector2<usize> = Vector2::new(0,0);
-        for row_index in 0..self.size.y {
-            let src_row_index = (self.row_offset + row_index) % self.size.y;
-            let src_index_offset = self.size.x*src_row_index;
-            let src_line = &self.cells[src_index_offset..(src_index_offset+self.size.x)];
-            let src_status = &self.row_status[src_row_index];
-            // copy as many cells as we can while doing line rewrapping 
-            for col_index in 0..src_status.length {
-                assert!(dst_cursor.x < size.x);
-                assert!(dst_cursor.y < size.y);
-                let dst_index_offset = size.x*dst_cursor.y;
-                let src_cell = &src_line[col_index];
-                let dst_cell = &mut self._old_cells[dst_index_offset+dst_cursor.x];
-                let dst_status = &mut self._old_row_status[dst_cursor.y];
-                *dst_cell = *src_cell; 
-                dst_status.length += 1;
-                dst_cursor.x += 1;
-                if dst_cursor.x < size.x {
-                    continue;
-                }
-                dst_cursor.x = 0;
-                dst_cursor.y += 1;
-                if dst_cursor.y >= size.y {
-                    break;
-                }
-            }
-            // early full write
-            if dst_cursor.y >= size.y {
-                break;
-            }
-            // generate line break
-            if src_status.is_linebreak {
-                let dst_status = &mut self._old_row_status[dst_cursor.y];
-                dst_status.is_linebreak = true;
-                dst_cursor.x = 0;
-                dst_cursor.y += 1;
-            }
-            if dst_cursor.y >= size.y {
-                break;
-            }
-        } 
-        // swap in resized data
+        let new_total_cells = new_size.x*new_size.y;
+        // copy into temporary buffer and reinsert them into resized grid
+        let old_row_offset = self.row_offset;
+        let old_cursor = self.cursor;
+        let old_size = self.size;
+        let old_total_cells = old_size.x*old_size.y;
+        self.resize_cells.resize(old_total_cells, Cell::default());
+        self.resize_row_status.resize(old_size.y, LineStatus::default());
+        self.resize_cells.copy_from_slice(self.cells.as_slice());
+        self.resize_row_status.copy_from_slice(self.row_status.as_slice());
+        // resize grid
+        self.size = new_size;
+        self.cells.resize(new_total_cells, Cell::default());
+        self.row_status.resize(new_size.y, LineStatus::default());
+        // reset grid
         self.row_offset = 0;
-        std::mem::swap(&mut self.cells, &mut self._old_cells);
-        std::mem::swap(&mut self.row_status, &mut self._old_row_status);
-        self.size = size;
-        self.set_cursor(self.cursor);
+        self.cursor = Vector2::new(0,0);
+        self.cells.fill(Cell::default());
+        self.row_status.fill(LineStatus::default());
+        // reinsert
+        for row_index in 0..old_size.y {
+            let row_index = (row_index + old_row_offset) % old_size.y;
+            let line = self.resize_row_status[row_index];
+            if line.length == 0 && !line.is_linebreak {
+                break;
+            }
+            for col_index in 0..line.length {
+                let index = row_index*old_size.x + col_index;
+                let cell = self.resize_cells[index];
+                self.write_cell(&cell);
+            }
+            if line.is_linebreak {
+                self.next_line_cursor(true);
+            }
+        }
+        // assume cursor wants to stay where it is
+        self.set_cursor(old_cursor);
     }
 
     pub fn get_size(&self) -> Vector2<usize> {
@@ -148,21 +132,26 @@ impl Viewport {
             b'\n' => { self.next_line_cursor(true); }, 
             b'\r' => { self.cursor.x = 0; },
             b'\x08' => { self.cursor.x = self.cursor.x.max(1) - 1; },
-            b' '..=b'~' => { self.write_cell(b as char); },
+            b' '..=b'~' => { self.write_utf8(b as char); },
             b'\x07' => { log::info!("Ding ding ding (BELL)"); },
             b => { log::error!("Unhandled byte: {}", b); },
         }
     }
 
-    pub fn write_cell(&mut self, character: char) {
+    pub fn write_utf8(&mut self, character: char) {
+        let mut cell = Cell::default();
+        cell.character = character;
+        cell.colour_from_pen(&self.pen);
+        self.write_cell(&cell);
+    }
+
+    fn write_cell(&mut self, cell: &Cell) {
         self.wrap_cursor();
         let row = self.get_current_row_index();
         let line_status = &mut self.row_status[row];
         line_status.length = line_status.length.max(self.cursor.x+1);
         let index = row*self.size.x + self.cursor.x;
-        let cell = &mut self.cells[index];
-        cell.character = character;
-        cell.colour_from_pen(&self.pen);
+        self.cells[index] = *cell;
         self.cursor.x += 1;
     }
 

@@ -138,7 +138,7 @@ impl Handler for Terminal {
     }
 
     fn on_utf8(&mut self, character: char) {
-        self.viewport.write_cell(character);
+        self.viewport.write_utf8(character);
     }
 
     fn on_unhandled_byte(&mut self, byte: u8) {

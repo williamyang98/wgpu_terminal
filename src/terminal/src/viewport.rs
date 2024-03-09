@@ -179,7 +179,6 @@ impl Viewport {
         if self.cursor.y == self.size.y {
             self.eject_oldest_line_into_scrollbuffer();
             self.cursor.y = self.size.y-1;
-            self.row_offset = (self.row_offset+1) % self.size.y;
         }
     }
 
@@ -202,6 +201,89 @@ impl Viewport {
         }
         line.fill(Cell::default());
         *line_status = LineStatus::default();
+        self.row_offset = (self.row_offset+1) % self.size.y;
+    }
+ 
+    pub fn scroll_up(&mut self) {
+        self.eject_oldest_line_into_scrollbuffer();
     }
 
+    pub fn scroll_down(&mut self) {
+        // move lines down and fill with nothing
+        self.row_offset = (self.row_offset+self.size.y-1) % self.size.y;
+        let clear_row = self.row_offset;
+        let index = self.size.x*clear_row;
+        let line = &mut self.cells[index..(index+self.size.x)];
+        let line_status = &mut self.row_status[clear_row];
+        line.fill(Cell::default());
+        *line_status = LineStatus {
+            is_linebreak: true,
+            ..LineStatus::default()
+        };
+    }
+
+    pub fn insert_lines(&mut self, total: usize) {
+        // cursor is 0 <= x <= Nx, 0 <= y < Ny
+        let max_rows = self.size.y - self.cursor.y;
+        let total = total.min(max_rows);
+        let shift = max_rows-total;
+        // shift rows downwards
+        for i in (0..shift).rev() {
+            let src_row = i;
+            let dst_row = i + total;
+            let src_row_index = (self.row_offset + self.cursor.y + src_row) % self.size.y;
+            let dst_row_index = (self.row_offset + self.cursor.y + dst_row) % self.size.y;
+            self.row_status[dst_row_index] = self.row_status[src_row_index]; 
+            let src_cell_offset = src_row_index*self.size.x;
+            let dst_cell_offset = dst_row_index*self.size.x;
+            for col in 0..self.size.x {
+                let dst_cell_index = dst_cell_offset + col;
+                let src_cell_index = src_cell_offset + col;
+                self.cells[dst_cell_index] = self.cells[src_cell_index];
+            }
+        }
+        for i in 0..total {
+            let row = (self.row_offset + self.cursor.y + i) % self.size.y;
+            self.row_status[row] = LineStatus {
+                is_linebreak: true,
+                ..LineStatus::default()
+            };
+            let cell_offset = row*self.size.x;
+            let row = &mut self.cells[cell_offset..(cell_offset+self.size.x)];
+            row.fill(Cell::default());
+        }
+    }
+
+    pub fn delete_lines(&mut self, total: usize) {
+        // cursor is 0 <= x <= Nx, 0 <= y < Ny
+        let max_rows = self.size.y - self.cursor.y;
+        let total = total.min(max_rows);
+        let shift = max_rows-total;
+        // shift rows upwards
+        for i in 0..shift {
+            let src_row = i + total;
+            let dst_row = i;
+            let src_row_index = (self.row_offset + self.cursor.y + src_row) % self.size.y;
+            let dst_row_index = (self.row_offset + self.cursor.y + dst_row) % self.size.y;
+            self.row_status[dst_row_index] = self.row_status[src_row_index]; 
+            let src_cell_offset = src_row_index*self.size.x;
+            let dst_cell_offset = dst_row_index*self.size.x;
+            for col in 0..self.size.x {
+                let dst_cell_index = dst_cell_offset + col;
+                let src_cell_index = src_cell_offset + col;
+                self.cells[dst_cell_index] = self.cells[src_cell_index];
+            }
+        }
+        for i in 0..total {
+            let j = i + shift;
+            let row = (self.row_offset + self.cursor.y + j) % self.size.y;
+            self.row_status[row] = LineStatus {
+                is_linebreak: false,
+                ..LineStatus::default()
+            };
+            let cell_offset = row*self.size.x;
+            let row = &mut self.cells[cell_offset..(cell_offset+self.size.x)];
+            row.fill(Cell::default());
+        }
+    }
 }

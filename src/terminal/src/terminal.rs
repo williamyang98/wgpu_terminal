@@ -16,9 +16,26 @@ use vt100::{
     graphic_style::{Rgb8, GraphicStyle},
 };
 
+#[derive(Clone,Copy,Debug)]
+pub struct CursorStatus {
+    is_visible: bool,
+    is_blinking: bool,
+}
+
+impl Default for CursorStatus {
+    fn default() -> Self {
+        Self {
+            is_visible: true,
+            is_blinking: true,
+        }
+    }
+}
+
+
 pub struct Terminal {
     viewport: Viewport,
-    is_cursor_visible: bool,
+    cursor_status: CursorStatus,
+    saved_cursor: Option<Vector2<usize>>,
     default_pen: Pen,
     colour_table: Vec<Rgb8>,
 }
@@ -44,7 +61,8 @@ impl Default for Terminal {
         };
         let mut res = Self {
             viewport: Viewport::default(),
-            is_cursor_visible: false,
+            cursor_status: CursorStatus::default(),
+            saved_cursor: None,
             default_pen,
             colour_table,
         };
@@ -155,6 +173,20 @@ impl Handler for Terminal {
                 Ok(title) => log::info!("[vt100] SetWindowTitleUtf8('{}')", title),
                 Err(_err) => log::info!("[vt100] SetWindowTitleBytes({:?})", data),
             },
+            Vt100Command::SetHyperlink { tag, link } => {
+                let tag_res = std::str::from_utf8(tag);
+                let link_res = std::str::from_utf8(link);
+                match (tag_res, link_res) {
+                    (Ok(tag), Ok(link)) => log::info!("[vt100] SetHyperlink(tag: '{}', link: '{}')", tag, link), 
+                    (Err(_), Ok(link)) => log::info!("[vt100] SetHyperlink(tag: '{:?}', link: '{}')", tag, link), 
+                    (Ok(tag), Err(_)) => log::info!("[vt100] SetHyperlink(tag: '{}', link: '{:?}')", tag, link), 
+                    (Err(_), Err(_)) => log::info!("[vt100] SetHyperlink(tag: '{:?}', link: '{:?}')", tag, link), 
+                }
+            },
+            // set pen colour
+            Vt100Command::SetGraphicStyles(ref styles) => {
+                self.set_graphic_styles(styles);
+            },
             Vt100Command::SetBackgroundColourRgb(ref rgb) => {
                 let pen = self.viewport.get_pen_mut();
                 pen.background_colour = *rgb;
@@ -171,11 +203,7 @@ impl Handler for Terminal {
                 let pen = self.viewport.get_pen_mut();
                 pen.foreground_colour = self.colour_table[*index as usize];
             },
-            Vt100Command::MoveCursorPositionViewport(ref pos) => {
-                // top left corner is (1,1)
-                let pos = Vector2::new((pos.x.get()-1) as usize, (pos.y.get()-1) as usize);
-                self.viewport.set_cursor(pos);
-            },
+            // erase data
             Vt100Command::EraseInDisplay(mode) => match mode {
                 EraseMode::FromCursorToEnd => {
                     let size = self.viewport.get_size();
@@ -250,31 +278,137 @@ impl Handler for Terminal {
                     c.character = ' ';
                 }
             },
-            Vt100Command::MoveCursorRight(total) => {
-                let mut cursor = self.viewport.get_cursor();
-                cursor.x = cursor.x + total.get() as usize;
-                self.viewport.set_cursor(cursor);
-            }
-            Vt100Command::HideCursor => {
-                self.is_cursor_visible = false;
-            },
-            Vt100Command::ShowCursor => {
-                self.is_cursor_visible = true;
-            },
-            Vt100Command::SetGraphicStyles(ref styles) => {
-                self.set_graphic_styles(styles);
-            },
-            Vt100Command::SetHyperlink { tag, link } => {
-                let tag_res = std::str::from_utf8(tag);
-                let link_res = std::str::from_utf8(link);
-                match (tag_res, link_res) {
-                    (Ok(tag), Ok(link)) => log::info!("[vt100] SetHyperlink(tag: '{}', link: '{}')", tag, link), 
-                    (Err(_), Ok(link)) => log::info!("[vt100] SetHyperlink(tag: '{:?}', link: '{}')", tag, link), 
-                    (Ok(tag), Err(_)) => log::info!("[vt100] SetHyperlink(tag: '{}', link: '{:?}')", tag, link), 
-                    (Err(_), Err(_)) => log::info!("[vt100] SetHyperlink(tag: '{:?}', link: '{:?}')", tag, link), 
+            Vt100Command::InsertSpaces(total) => {
+                let cursor = self.viewport.get_cursor();
+                let (line, _) = self.viewport.get_row_mut(cursor.y);
+                let line = &mut line[cursor.x..];
+                let total = total.get() as usize;
+                let width = line.len();
+                let total = total.min(width);
+                let shift = width-total;
+                for i in (0..shift).rev() {
+                    let dst_i = i+total;
+                    let src_i = i;
+                    line[dst_i] = line[src_i];
+                }
+                for i in 0..total {
+                    line[i] = Cell::default();
                 }
             },
-            c => log::info!("[vt100] ({:?})", c),
+            Vt100Command::DeleteCharacters(total) => {
+                let cursor = self.viewport.get_cursor();
+                let (line, _) = self.viewport.get_row_mut(cursor.y);
+                let line = &mut line[cursor.x..];
+                let total = total.get() as usize;
+                let width = line.len();
+                let total = total.min(width);
+                let shift = width-total;
+                for i in 0..shift {
+                    let dst_i = i;
+                    let src_i = i+total;
+                    line[dst_i] = line[src_i];
+                }
+                for i in 0..total {
+                    line[i+shift] = Cell::default();
+                }
+            },
+            Vt100Command::InsertLines(total) => {
+                self.viewport.insert_lines(total.get() as usize); 
+            },
+            Vt100Command::DeleteLines(total) => {
+                self.viewport.delete_lines(total.get() as usize); 
+            },
+            // cursor movement
+            Vt100Command::MoveCursorPositionViewport(ref pos) => {
+                // top left corner is (1,1)
+                let pos = Vector2::new((pos.x.get()-1) as usize, (pos.y.get()-1) as usize);
+                self.viewport.set_cursor(pos);
+            },
+            Vt100Command::MoveCursorUp(total) => {
+                let mut cursor = self.viewport.get_cursor();
+                let total = total.get() as usize;
+                cursor.y = cursor.y.max(total) - total;
+                self.viewport.set_cursor(cursor);
+            },
+            Vt100Command::MoveCursorDown(total) => {
+                let mut cursor = self.viewport.get_cursor();
+                cursor.y += total.get() as usize;
+                self.viewport.set_cursor(cursor);
+            },
+            Vt100Command::MoveCursorRight(total) => {
+                let mut cursor = self.viewport.get_cursor();
+                cursor.x += total.get() as usize;
+                self.viewport.set_cursor(cursor);
+            },
+            Vt100Command::MoveCursorLeft(total) => {
+                let mut cursor = self.viewport.get_cursor();
+                let total = total.get() as usize;
+                cursor.x = cursor.x.max(total) - total;
+                self.viewport.set_cursor(cursor);
+            },
+            Vt100Command::MoveCursorReverseIndex => {
+                let mut cursor = self.viewport.get_cursor();
+                cursor.y = cursor.y.max(1) - 1;
+                self.viewport.set_cursor(cursor);
+            },
+            Vt100Command::MoveCursorNextLine(total) => {
+                let mut cursor = self.viewport.get_cursor();
+                cursor.y = total.get() as usize - 1;
+                self.viewport.set_cursor(cursor);
+            },
+            Vt100Command::MoveCursorPreviousLine(total) => {
+                let mut cursor = self.viewport.get_cursor();
+                cursor.y = total.get() as usize - 1;
+                self.viewport.set_cursor(cursor);
+            },
+            Vt100Command::MoveCursorHorizontalAbsolute(total) => {
+                let mut cursor = self.viewport.get_cursor();
+                cursor.x = total.get() as usize - 1;
+                self.viewport.set_cursor(cursor);
+            },
+            Vt100Command::MoveCursorVerticalAbsolute(total) => {
+                let mut cursor = self.viewport.get_cursor();
+                cursor.y = total.get() as usize - 1;
+                self.viewport.set_cursor(cursor);
+            },
+            // viewport positioning
+            Vt100Command::ScrollUp(total) => {
+                for _ in 0..total.get() {
+                    self.viewport.scroll_up();
+                }
+            },
+            Vt100Command::ScrollDown(total) => {
+                for _ in 0..total.get() {
+                    self.viewport.scroll_down();
+                }
+            },
+            // cursor save/load
+            Vt100Command::SaveCursorToMemory => {
+                let cursor = self.viewport.get_cursor();
+                self.saved_cursor = Some(cursor);
+            },
+            Vt100Command::RestoreCursorFromMemory => {
+                match self.saved_cursor {
+                    Some(cursor) => self.viewport.set_cursor(cursor),
+                    None => log::warn!("[vt100] tried to restore nonexistent cursor from memory"),
+                }
+            },
+            // cursor status
+            Vt100Command::EnableCursorBlinking => {
+                self.cursor_status.is_blinking = true;
+            },
+            Vt100Command::DisableCursorBlinking => {
+                self.cursor_status.is_blinking = false;
+            },
+            Vt100Command::HideCursor => {
+                self.cursor_status.is_visible = false;
+            },
+            Vt100Command::ShowCursor => {
+                self.cursor_status.is_visible = true;
+            },
+            _ => {
+                log::info!("[vt100] Unhandled: {:?}", c);
+            },
         }
     }
 

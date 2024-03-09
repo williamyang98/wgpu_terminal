@@ -227,9 +227,6 @@ impl<'a, T: TerminalTarget> TerminalWindow<'a, T> {
                 for line in lines {
                     let row = scrollback_buffer.get_row(line);
                     for cell in row {
-                        let dst_index = cursor.y*size.x + cursor.x;
-                        self.terminal_cells[dst_index] = *cell;
-                        cursor.x += 1;
                         if cursor.x >= size.x {
                             cursor.x = 0;
                             cursor.y += 1;
@@ -237,6 +234,9 @@ impl<'a, T: TerminalTarget> TerminalWindow<'a, T> {
                         if cursor.y >= size.y {
                             break;
                         }
+                        let dst_index = cursor.y*size.x + cursor.x;
+                        self.terminal_cells[dst_index] = *cell;
+                        cursor.x += 1;
                     }
                     if cursor.y >= size.y {
                         break;

@@ -44,7 +44,14 @@ impl Default for Terminal {
     fn default() -> Self {
         let colour_table: Vec<Rgb8> = XTERM_COLOUR_TABLE
             .iter()
-            .map(|v| convert_u32_to_rgb(*v))
+            .map(|v| {
+                const A: u8 = 80;
+                let mut rgb = convert_u32_to_rgb(*v);
+                rgb.r = rgb.r.saturating_add(A);
+                rgb.g = rgb.g.saturating_add(A);
+                rgb.b = rgb.b.saturating_add(A);
+                rgb
+            })
             .collect();
         assert!(colour_table.len() == 256);
         let default_pen = Pen {
@@ -177,7 +184,7 @@ impl Handler for Terminal {
                 }
             },
             // set pen colour
-            Vt100Command::SetGraphicStyles(ref styles) => {
+            Vt100Command::SetGraphicStyles(styles) => {
                 self.set_graphic_styles(styles);
             },
             Vt100Command::SetBackgroundColourRgb(ref rgb) => {

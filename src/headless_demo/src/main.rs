@@ -5,6 +5,7 @@ use terminal::{
 };
 use std::io::{Write,Read};
 use std::ops::DerefMut;
+use cgmath::Vector2;
 
 #[derive(Clone,Copy,Debug,Default,clap::ValueEnum)]
 enum Mode {
@@ -34,6 +35,7 @@ fn main() -> anyhow::Result<()> {
         .init()?;
 
     let mut terminal = Terminal::default();
+    terminal.get_viewport_mut().set_size(Vector2::new(128,32));
     match args.mode { 
         Mode::Conpty => start_conpty(&args, &mut terminal),
         Mode::Raw => start_raw_shell(&args, &mut terminal),

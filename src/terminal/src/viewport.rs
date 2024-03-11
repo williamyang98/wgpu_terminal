@@ -47,7 +47,7 @@ impl Viewport {
     }
 
     pub fn set_size(&mut self, new_size: Vector2<usize>) {
-        assert!(new_size.x > 1);
+        assert!(new_size.x > 0);
         assert!(new_size.y > 0);
         if new_size == self.size {
             return;
@@ -139,8 +139,10 @@ impl Viewport {
     }
 
     pub fn write_utf8(&mut self, character: char) {
-        let mut cell = Cell::default();
-        cell.character = character;
+        let mut cell = Cell {
+            character,
+            ..Cell::default()
+        };
         cell.colour_from_pen(&self.pen);
         self.write_cell(&cell);
     }

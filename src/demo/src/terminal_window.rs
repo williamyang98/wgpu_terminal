@@ -6,12 +6,9 @@ use glyph_grid::{
     glyph_grid::GlyphGrid,
 };
 use glyph_grid_renderer::renderer::Renderer;
-use terminal::{
-    terminal::Terminal,
-    primitives::Cell,
-};
+use terminal::terminal::Terminal;
 use winit::{
-    event::{Event, WindowEvent, MouseScrollDelta, ElementState},
+    event::{Event, WindowEvent, ElementState},
     keyboard::{KeyCode,PhysicalKey,Key},
     event_loop::EventLoopWindowTarget,
     window::Window,
@@ -19,12 +16,13 @@ use winit::{
 use crate::{
     frame_counter::FrameCounter,
     terminal_target::TerminalTarget,
+    terminal_reader::TerminalReader,
 };
 
 pub struct TerminalWindow<'a, T> {
     terminal: Arc<Mutex<Terminal>>, 
     terminal_target: &'a mut T,
-    terminal_cells: Vec<Cell>,
+    terminal_reader: TerminalReader,
     glyph_grid: GlyphGrid,
     glyph_cache: GlyphCache,
     winit_window: &'a Window,
@@ -35,8 +33,6 @@ pub struct TerminalWindow<'a, T> {
     renderer: Renderer,
     current_frame: usize,
     frame_counter: FrameCounter,
-    is_scrollback_buffer: bool,
-    scrollback_buffer_line: usize,
 }
 
 impl<'a, T: TerminalTarget> TerminalWindow<'a, T> {
@@ -57,7 +53,9 @@ impl<'a, T: TerminalTarget> TerminalWindow<'a, T> {
         let initial_grid_size = Vector2::new(1,1);
         let glyph_grid = GlyphGrid::new(initial_grid_size);
         let glyph_cache = GlyphCache::new(font, font_size);
+        let mut terminal_reader = TerminalReader::default();
         terminal_target.set_size(initial_grid_size)?;
+        terminal_reader.set_size(initial_grid_size);
 
         // wgpu
         let wgpu_instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
@@ -99,7 +97,7 @@ impl<'a, T: TerminalTarget> TerminalWindow<'a, T> {
         Ok(Self {
             terminal,
             terminal_target,
-            terminal_cells: Vec::new(),
+            terminal_reader,
             glyph_grid,
             glyph_cache,
             winit_window,
@@ -110,8 +108,6 @@ impl<'a, T: TerminalTarget> TerminalWindow<'a, T> {
             renderer,
             current_frame: 0,
             frame_counter: FrameCounter::default(),
-            is_scrollback_buffer: false,
-            scrollback_buffer_line: 0,
         })
     }
 
@@ -136,23 +132,20 @@ impl<'a, T: TerminalTarget> TerminalWindow<'a, T> {
     }
 
     fn on_mouse_wheel(&mut self, delta: winit::event::MouseScrollDelta) {
-        if !self.is_scrollback_buffer {
-            return;
-        }
         use winit::event::MouseScrollDelta as Delta;
         match delta {
-            Delta::LineDelta(x, y) => {
+            Delta::LineDelta(_x, y) => {
                 if y > 0.0 {
-                    self.scrollback_buffer_line = self.scrollback_buffer_line.max(1) - 1;
+                    self.terminal_reader.scroll_up(1);
                 } else {
-                    self.scrollback_buffer_line += 1;
+                    self.terminal_reader.scroll_down(1);
                 }
             },
             Delta::PixelDelta(delta) => {
                 if delta.y > 0.0 {
-                    self.scrollback_buffer_line = self.scrollback_buffer_line.max(1) - 1;
+                    self.terminal_reader.scroll_up(1);
                 } else {
-                    self.scrollback_buffer_line += 1;
+                    self.terminal_reader.scroll_down(1);
                 }
             },
         }
@@ -196,65 +189,17 @@ impl<'a, T: TerminalTarget> TerminalWindow<'a, T> {
 
     fn update_grid_from_terminal(&mut self) {
         self.current_frame += 1;
-        // self.frame_counter.update();
-        let mut terminal_size = None;
-        if let Ok(terminal) = self.terminal.try_lock() {
-            let viewport = terminal.get_viewport();
-            let size = viewport.get_size();
-            let total_cells = size.x*size.y;
-            self.terminal_cells.resize(total_cells, Cell::default());
-            self.terminal_cells.fill(Cell::default());
-
-            if !self.is_scrollback_buffer {
-                for y in 0..size.y {
-                    let (src_row, status) = viewport.get_row(y);
-                    let dst_index = y*size.x;
-                    let dst_row = &mut self.terminal_cells[dst_index..(dst_index+size.x)];
-                    assert!(status.length <= size.x);
-                    for x in 0..status.length {
-                        dst_row[x] = src_row[x];
-                    }
-                    for x in status.length..size.x {
-                        dst_row[x] = Cell::default();
-                    }
-                }
-            } else {
-                let scrollback_buffer = viewport.get_scrollback_buffer();
-                let lines = scrollback_buffer.get_lines();
-                self.scrollback_buffer_line = self.scrollback_buffer_line.min(lines.len());
-                let lines = &lines[self.scrollback_buffer_line..];
-                let mut cursor: Vector2<usize> = Vector2::new(0,0);
-                for line in lines {
-                    let row = scrollback_buffer.get_row(line);
-                    for cell in row {
-                        if cursor.x >= size.x {
-                            cursor.x = 0;
-                            cursor.y += 1;
-                        }
-                        if cursor.y >= size.y {
-                            break;
-                        }
-                        let dst_index = cursor.y*size.x + cursor.x;
-                        self.terminal_cells[dst_index] = *cell;
-                        cursor.x += 1;
-                    }
-                    if cursor.y >= size.y {
-                        break;
-                    }
-                    cursor.x = 0;
-                    cursor.y += 1;
-                    if cursor.y >= size.y {
-                        break;
-                    }
-                }
-            }
-            terminal_size = Some(size);
+        self.frame_counter.update();
+        if let Ok(ref terminal) = self.terminal.try_lock() {
+            self.terminal_reader.read_terminal(terminal);
         };
-        if let Some(terminal_size) = terminal_size { 
+        { 
             // update glyph data if possible
-            self.glyph_grid.resize(terminal_size);
+            let size = self.terminal_reader.get_size();
+            let cells = self.terminal_reader.get_cells();
+            self.glyph_grid.resize(size);
             let dst_grid = self.glyph_grid.get_mut_view();
-            for (dst, src) in dst_grid.data.iter_mut().zip(self.terminal_cells.iter()) {
+            for (dst, src) in dst_grid.data.iter_mut().zip(cells.iter()) {
                 let location =  self.glyph_cache.get_glyph_location(src.character, self.current_frame);
                 dst.set_page_index(location.page_index);
                 dst.set_glyph_position(location.glyph_position);
@@ -302,42 +247,38 @@ impl<'a, T: TerminalTarget> TerminalWindow<'a, T> {
     }
 
     fn on_keyboard_input(&mut self, event: winit::event::KeyEvent) {
-        if event.state == ElementState::Pressed {
-            if let PhysicalKey::Code(KeyCode::F1) = event.physical_key {
-                self.is_scrollback_buffer = !self.is_scrollback_buffer;
+        if event.state != ElementState::Pressed {
+            return;
+        }
+
+        if let PhysicalKey::Code(code) = event.physical_key {
+            if let Some(data) = convert_keycode_to_bytes(code) {
+                let _ = self.terminal_target.write_data(data);
+                self.terminal_reader.scroll_to_bottom();
                 return;
             }
-            if !self.is_scrollback_buffer {
-                if let PhysicalKey::Code(code) = event.physical_key {
-                    if let Some(data) = convert_keycode_to_bytes(code) {
-                        let _ = self.terminal_target.write_data(data);
-                        return;
-                    }
-                }
-                if let Key::Character(string) = event.logical_key {
-                    let _ = self.terminal_target.write_data(string.as_bytes());
-                    return;
-                }
-            } else {
-                if let PhysicalKey::Code(code) = event.physical_key {
-                    const LARGE_JUMP: usize = 4096;
-                    const SMALL_JUMP: usize = 16;
-                    match code {
-                        KeyCode::End => {
-                            self.scrollback_buffer_line += LARGE_JUMP;
-                        },
-                        KeyCode::Home => {
-                            self.scrollback_buffer_line = self.scrollback_buffer_line.max(LARGE_JUMP) - LARGE_JUMP;
-                        },
-                        KeyCode::PageDown => {
-                            self.scrollback_buffer_line += SMALL_JUMP;
-                        },
-                        KeyCode::PageUp => {
-                            self.scrollback_buffer_line = self.scrollback_buffer_line.max(SMALL_JUMP) - SMALL_JUMP;
-                        },
-                        _ => {},
-                    }
-                }
+        }
+
+        if let Key::Character(string) = event.logical_key {
+            let _ = self.terminal_target.write_data(string.as_bytes());
+            self.terminal_reader.scroll_to_bottom();
+            return;
+        }
+
+        if let PhysicalKey::Code(code) = event.physical_key {
+            let size = self.terminal_reader.get_size();
+            let mut has_code = true;
+            match code {
+                KeyCode::End => self.terminal_reader.scroll_to_bottom(),
+                KeyCode::Home => self.terminal_reader.scroll_to_top(),
+                KeyCode::PageDown => self.terminal_reader.scroll_down(size.y),
+                KeyCode::PageUp => self.terminal_reader.scroll_up(size.y),
+                _ => {
+                    has_code = false; 
+                },
+            };
+            if has_code {
+                return;
             }
         }
     }

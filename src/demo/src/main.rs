@@ -3,10 +3,9 @@ use terminal::{
     terminal::Terminal, 
     parser::Parser as TerminalParser,
 };
-use std::io::{Write,Read};
+use std::io::Read;
 use std::ops::DerefMut;
 use std::sync::{Arc,Mutex};
-use cgmath::Vector2;
 use wgpu_terminal::{
     terminal_window::TerminalWindow,
     terminal_target::{TerminalTarget,ConptyTarget},

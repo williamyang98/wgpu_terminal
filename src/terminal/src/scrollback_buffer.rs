@@ -17,11 +17,35 @@ pub struct ScrollbackBuffer {
     total_cells: usize,
 }
 
+fn greatest_common_denominator(a: usize, b: usize) -> usize {
+    if b == 0 {
+        return a;
+    }
+    greatest_common_denominator(b, a % b)
+}
+
+fn lowest_common_multiple(a: usize, b: usize) -> usize {
+    // try to avoid overflow
+    if a > b {
+        a / greatest_common_denominator(a, b) * b
+    } else {
+        b / greatest_common_denominator(a, b) * a
+    }
+}
+
 impl Default for ScrollbackBuffer {
     fn default() -> Self {
         let allocation_granularity = get_allocation_granularity();
-        let lines = CircularBuffer::new(allocation_granularity).unwrap();
-        let cells = CircularBuffer::new(allocation_granularity*128).unwrap();
+        let line_size = std::mem::size_of::<Line>();
+        let cell_size = std::mem::size_of::<Cell>();
+        let total_line_bytes = lowest_common_multiple(allocation_granularity, line_size) * 4;
+        let total_cell_bytes = lowest_common_multiple(allocation_granularity, cell_size) * 32;
+        let total_lines = total_line_bytes / line_size;
+        let total_cells = total_cell_bytes / cell_size;
+        log::info!("[scrollback-buffer] N*sizeof(Line)={}*{}={}", total_lines, line_size, total_line_bytes);
+        log::info!("[scrollback-buffer] N*sizeof(Cell)={}*{}={}", total_cells, cell_size, total_cell_bytes);
+        let lines = CircularBuffer::new(total_lines).unwrap();
+        let cells = CircularBuffer::new(total_cells).unwrap();
         Self {
             lines,
             cells,

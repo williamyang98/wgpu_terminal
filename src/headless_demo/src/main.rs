@@ -5,8 +5,6 @@ use terminal::{
 };
 use std::io::{Write,Read};
 use std::ops::DerefMut;
-use std::sync::{Arc,Mutex};
-use cgmath::Vector2;
 
 #[derive(Clone,Copy,Debug,Default,clap::ValueEnum)]
 enum Mode {
@@ -35,41 +33,53 @@ fn main() -> anyhow::Result<()> {
         .without_timestamps()
         .init()?;
 
+    let mut terminal = Terminal::default();
     match args.mode { 
-        Mode::Conpty => start_conpty(&args),
-        Mode::Raw => start_raw_shell(&args),
+        Mode::Conpty => start_conpty(&args, &mut terminal),
+        Mode::Raw => start_raw_shell(&args, &mut terminal),
+    }?;
+    let viewport = terminal.get_viewport();
+    let size = viewport.get_size();
+    let mut stdout = std::io::stdout();
+    let mut tmp_buf = [0u8; 4];
+    for y in 0..size.y {
+        let (row, status) = viewport.get_row(y);
+        for cell in &row[0..status.length] {
+            let data = cell.character.encode_utf8(&mut tmp_buf);
+            let _ = stdout.write(data.as_bytes());
+        }
+        if status.is_linebreak {
+            let _ = stdout.write(b"\n");
+        }
     }
+    Ok(())
 }
 
-fn start_conpty(args: &Args) -> anyhow::Result<()> {
+fn start_conpty(args: &Args, terminal: &mut Terminal) -> anyhow::Result<()> {
     let mut command = std::process::Command::new(&args.filename);
     command.args(args.arguments.as_slice());
     command.stdin(std::process::Stdio::piped());
     command.stdout(std::process::Stdio::piped());
     command.stderr(std::process::Stdio::piped());
     let mut process = conpty::Process::spawn(command)?;
-    let mut pipe_input = process.input()?;
     let mut pipe_output = process.output()?;
-    let mut terminal = Terminal::default();
-    start_reader_thread(args.clone(), &mut terminal, &mut pipe_output);
-    process.exit(0)?;
-    drop(process);
+    start_reader_thread(args.clone(), terminal, &mut pipe_output);
+    let exit_code = process.wait(None)?;
+    println!("conpty process exited with: {}", exit_code);
     Ok(())
 }
 
-fn start_raw_shell(args: &Args) -> anyhow::Result<()> {
+fn start_raw_shell(args: &Args, terminal: &mut Terminal) -> anyhow::Result<()> {
     let mut command = std::process::Command::new(&args.filename);
     command.args(args.arguments.as_slice());
     command.stdin(std::process::Stdio::piped());
     command.stdout(std::process::Stdio::piped());
     command.stderr(std::process::Stdio::null());
     let mut process = command.spawn()?;
-    let mut pipe_input = process.stdin.take().ok_or("Failed to get pipe.stdin").map_err(anyhow::Error::msg)?;
     let mut pipe_output = process.stdout.take().ok_or("Failed to get pipe.stdout").map_err(anyhow::Error::msg)?;
-    let mut terminal = Terminal::default();
-    start_reader_thread(args.clone(), &mut terminal, &mut pipe_output);
-    process.kill()?;
-    drop(process);
+    start_reader_thread(args.clone(), terminal, &mut pipe_output);
+    let exit_code = process.wait()?;
+    println!("raw process exited with: {:?}", exit_code);
     Ok(())
 }
 

@@ -44,14 +44,7 @@ impl Default for Terminal {
     fn default() -> Self {
         let colour_table: Vec<Rgb8> = XTERM_COLOUR_TABLE
             .iter()
-            .map(|v| {
-                let mut rgb = convert_u32_to_rgb(*v);
-                const A: u8 = 60;
-                rgb.r = rgb.r.min(255-A) + A;
-                rgb.g = rgb.g.min(255-A) + A;
-                rgb.b = rgb.b.min(255-A) + A;
-                rgb
-            })
+            .map(|v| convert_u32_to_rgb(*v))
             .collect();
         assert!(colour_table.len() == 256);
         let default_pen = Pen {

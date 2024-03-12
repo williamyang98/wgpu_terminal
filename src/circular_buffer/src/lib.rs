@@ -1,8 +1,21 @@
 mod circular_buffer;
-pub use circular_buffer::{ 
-    CircularBuffer,
-    CreateError,
+pub use circular_buffer::CircularBuffer;
+
+#[cfg(windows)]
+mod win32;
+#[cfg(windows)]
+pub use win32::{
     CreateAlignError,
+    CreateError,
+    get_allocation_granularity,
+};
+
+#[cfg(unix)]
+mod unix;
+#[cfg(unix)]
+pub use unix::{
+    CreateAlignError,
+    CreateError,
     get_allocation_granularity,
 };
 

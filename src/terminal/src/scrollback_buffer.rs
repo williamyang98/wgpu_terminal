@@ -38,8 +38,8 @@ impl Default for ScrollbackBuffer {
         let allocation_granularity = get_allocation_granularity();
         let line_size = std::mem::size_of::<Line>();
         let cell_size = std::mem::size_of::<Cell>();
-        let total_line_bytes = lowest_common_multiple(allocation_granularity, line_size) * 4;
-        let total_cell_bytes = lowest_common_multiple(allocation_granularity, cell_size) * 32;
+        let total_line_bytes = lowest_common_multiple(allocation_granularity, line_size) * 16;
+        let total_cell_bytes = lowest_common_multiple(allocation_granularity, cell_size) * 128;
         let total_lines = total_line_bytes / line_size;
         let total_cells = total_cell_bytes / cell_size;
         log::info!("[scrollback-buffer] N*sizeof(Line)={}*{}={}", total_lines, line_size, total_line_bytes);

@@ -27,17 +27,38 @@ pub struct GlyphAtlas {
 }
 
 impl GlyphAtlas {
-    pub(crate) fn new(glyph_size: Vector2<usize>) -> Self {
+    pub(crate) fn new(glyph_size: Vector2<usize>, max_texture_size: Vector2<usize>) -> Self {
+        // determine best block size
+        let max_grid_size = Vector2::new(
+            max_texture_size.x / glyph_size.x,
+            max_texture_size.y / glyph_size.y,
+        );
+        const DESIRED_GLYPHS_IN_BLOCK: Vector2<usize> = Vector2::new(16,8);
+        let max_blocks = Vector2::new(
+            (max_grid_size.x/DESIRED_GLYPHS_IN_BLOCK.x).max(1),
+            (max_grid_size.y/DESIRED_GLYPHS_IN_BLOCK.y).max(1),
+        );
+        let total_glyphs_in_block = Vector2::new(
+            max_grid_size.x/max_blocks.x,
+            max_grid_size.y/max_blocks.y,
+        );
+        log::info!(
+            "Creating glyph atlas with: glyph_size=({},{}) glyphs_in_block=({},{}) max_blocks=({},{}) max_size=({},{})",
+            glyph_size.x, glyph_size.y,
+            total_glyphs_in_block.x, total_glyphs_in_block.y,
+            max_blocks.x, max_blocks.y,
+            glyph_size.x*total_glyphs_in_block.x*max_blocks.x, glyph_size.y*total_glyphs_in_block.y*max_blocks.y,
+        );
         let mut atlas = Self {
             data: Vec::new(),
             glyph_size,
-            total_glyphs_in_block: Vector2::new(8,8),
+            total_glyphs_in_block,
             total_blocks: Vector2::new(0,0),
-            max_blocks: Vector2::new(8,8),
+            max_blocks,
             free_index: GlyphIndex::default(),
             total_modified_glyphs_per_block: Vec::new(),
         };
-        atlas.resize(Vector2::new(8,1));
+        atlas.resize(Vector2::new(1,1));
         atlas
     }
 
@@ -48,6 +69,7 @@ impl GlyphAtlas {
         self.total_modified_glyphs_per_block.fill(1);
         let texture_size = self.get_texture_size();
         self.data.resize(texture_size.x*texture_size.y, 0u8);
+        log::info!("Resizing glyph atlas to {}x{}", total_blocks.x, total_blocks.y);
     }
 
     pub fn get_block(&self, block: Vector2<usize>) -> &[u8] {
@@ -93,9 +115,25 @@ impl GlyphAtlas {
         self.total_modified_glyphs_per_block[block_index] += 1;
     }
 
-    pub(crate) fn get_new_free_index(&mut self) -> Option<GlyphIndex> {
+    pub(crate) fn get_free_index(&mut self) -> Option<GlyphIndex> {
         if self.free_index.block.y >= self.max_blocks.y {
             return None;
+        }
+        assert!(self.free_index.block.x < self.max_blocks.x);
+        // resize to fit free index
+        let new_total_blocks = Vector2::new(
+            self.total_blocks.x.max(self.free_index.block.x+1),
+            self.total_blocks.y.max(self.free_index.block.y+1),
+        );
+        if new_total_blocks != self.total_blocks {
+            self.resize(new_total_blocks);
+        }
+        Some(self.free_index)
+    }
+
+    pub(crate) fn increment_free_index(&mut self) -> bool {
+        if self.free_index.block.y >= self.max_blocks.y {
+            return false;
         }
         self.free_index.position.x += 1;
         if self.free_index.position.x >= self.total_glyphs_in_block.x {
@@ -106,22 +144,11 @@ impl GlyphAtlas {
             self.free_index.position = Vector2::new(0,0);
             self.free_index.block.x += 1;
         }
-        if self.free_index.block.x >= self.total_blocks.x {
+        if self.free_index.block.x >= self.max_blocks.x {
             self.free_index.block.x = 0;
             self.free_index.block.y += 1;
         }
-        if self.free_index.block.y >= self.total_blocks.y {
-            if self.total_blocks.y < self.max_blocks.y {
-                let new_total_blocks = Vector2::<usize>::new(
-                    self.total_blocks.x,
-                    self.total_blocks.y+1,
-                );
-                self.resize(new_total_blocks);
-            } else {
-                return None;
-            }
-        }
-        Some(self.free_index)
+        true
     }
 
     pub fn get_modified_blocks(&self) -> impl Iterator<Item=Vector2<usize>> + '_ {

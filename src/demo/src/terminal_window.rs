@@ -44,20 +44,6 @@ impl<'a, T: TerminalTarget> TerminalWindow<'a, T> {
         font_filename: String, font_size: f32,
     ) -> anyhow::Result<Self> 
     {
-        let mut font_file = std::fs::File::open(font_filename.clone())?;
-        let mut font_data = Vec::<u8>::new();
-        let total_bytes_read = font_file.read_to_end(&mut font_data)?;
-        let font_data = &font_data[..total_bytes_read];
-        let font = fontdue::Font::from_bytes(font_data, fontdue::FontSettings::default())
-            .map_err(anyhow::Error::msg)?;
- 
-        let initial_grid_size = Vector2::new(1,1);
-        let glyph_generator = Box::new(FontdueGlyphGenerator::new(font, font_size));
-        let glyph_cache = GlyphCache::new(glyph_generator);
-        let mut terminal_reader = TerminalReader::default();
-        terminal_target.set_size(initial_grid_size)?;
-        terminal_reader.set_size(initial_grid_size);
-
         // wgpu
         let wgpu_instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
             backends: wgpu::util::backend_bits_from_env().unwrap_or_default(),
@@ -92,6 +78,23 @@ impl<'a, T: TerminalTarget> TerminalWindow<'a, T> {
         wgpu_config.present_mode = wgpu::PresentMode::AutoVsync;
         wgpu_surface.configure(&wgpu_device, &wgpu_config);
         let renderer = Renderer::new(&wgpu_config, &wgpu_device);
+        // glyph cache
+        let mut font_file = std::fs::File::open(font_filename.clone())?;
+        let mut font_data = Vec::<u8>::new();
+        let total_bytes_read = font_file.read_to_end(&mut font_data)?;
+        let font_data = &font_data[..total_bytes_read];
+        let font_settings = fontdue::FontSettings::default();
+        let font = fontdue::Font::from_bytes(font_data, font_settings).map_err(anyhow::Error::msg)?;
+        let wgpu_limits = wgpu_adapter.limits();
+        let max_texture_size = wgpu_limits.max_texture_dimension_2d as usize;
+        let max_texture_size = Vector2::new(max_texture_size, max_texture_size);
+        let glyph_generator = Box::new(FontdueGlyphGenerator::new(font, font_size));
+        let glyph_cache = GlyphCache::new(glyph_generator, max_texture_size);
+        let mut terminal_reader = TerminalReader::default();
+        // terminal grid
+        let initial_grid_size = Vector2::new(128,64);
+        terminal_target.set_size(initial_grid_size)?;
+        terminal_reader.set_size(initial_grid_size);
 
         Ok(Self {
             terminal,

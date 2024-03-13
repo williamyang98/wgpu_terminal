@@ -8,3 +8,4 @@ pub use glyph_atlas::{GlyphAtlas, GlyphIndex};
 pub use glyph_cache::GlyphCache;
 pub use glyph_generator::{GlyphGenerator, FontdueGlyphGenerator};
 pub use renderer::{CellData, Renderer};
+pub use lru_list::LruList;

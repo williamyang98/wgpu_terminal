@@ -8,11 +8,17 @@ use std::ops::DerefMut;
 use std::sync::{Arc,Mutex};
 use wgpu_terminal::{
     terminal_window::TerminalWindow,
-    terminal_target::{TerminalTarget,ConptyTarget},
+    terminal_target::TerminalTarget,
 };
+#[cfg(windows)]
+use wgpu_terminal::terminal_target::ConptyTarget;
 
 #[derive(Clone,Copy,Debug,Default,clap::ValueEnum)]
 enum Mode {
+    #[cfg(unix)]
+    #[default]
+    Pty,
+    #[cfg(windows)]
     #[default]
     Conpty,
     Raw,
@@ -49,11 +55,20 @@ fn main() -> anyhow::Result<()> {
         .init()?;
 
     match args.mode { 
-        Mode::Conpty => start_conpty(&args),
         Mode::Raw => start_raw_shell(&args),
+        #[cfg(unix)]
+        Mode::Pty => start_pty(&args),
+        #[cfg(windows)]
+        Mode::Conpty => start_conpty(&args),
     }
 }
 
+#[cfg(unix)]
+fn start_pty(args: &Args) -> anyhow::Result<()> {
+    Ok(())
+}
+
+#[cfg(windows)]
 fn start_conpty(args: &Args) -> anyhow::Result<()> {
     let mut command = std::process::Command::new(&args.filename);
     command.args(args.arguments.as_slice());

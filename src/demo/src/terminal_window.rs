@@ -1,11 +1,12 @@
 use std::sync::{Arc,Mutex};
 use std::io::Read;
 use cgmath::{Vector2,Vector4,ElementWise};
-use glyph_grid::{
-    glyph_cache::GlyphCache,
-    glyph_grid::GlyphGrid,
+use tile_renderer::{
+    Renderer,
+    GlyphCache,
+    FontdueGlyphGenerator,
+    CellData,
 };
-use glyph_grid_renderer::renderer::Renderer;
 use terminal::terminal::Terminal;
 use winit::{
     event::{Event, WindowEvent, ElementState},
@@ -23,7 +24,7 @@ pub struct TerminalWindow<'a, T> {
     terminal: Arc<Mutex<Terminal>>, 
     terminal_target: &'a mut T,
     terminal_reader: TerminalReader,
-    glyph_grid: GlyphGrid,
+    glyph_grid: Vec<CellData>,
     glyph_cache: GlyphCache,
     winit_window: &'a Window,
     wgpu_config: wgpu::SurfaceConfiguration,
@@ -51,8 +52,8 @@ impl<'a, T: TerminalTarget> TerminalWindow<'a, T> {
             .map_err(anyhow::Error::msg)?;
  
         let initial_grid_size = Vector2::new(1,1);
-        let glyph_grid = GlyphGrid::new(initial_grid_size);
-        let glyph_cache = GlyphCache::new(font, font_size);
+        let glyph_generator = Box::new(FontdueGlyphGenerator::new(font, font_size));
+        let glyph_cache = GlyphCache::new(glyph_generator);
         let mut terminal_reader = TerminalReader::default();
         terminal_target.set_size(initial_grid_size)?;
         terminal_reader.set_size(initial_grid_size);
@@ -78,9 +79,7 @@ impl<'a, T: TerminalTarget> TerminalWindow<'a, T> {
         let (wgpu_device, wgpu_queue) = wgpu_adapter
             .request_device(&wgpu::DeviceDescriptor {
                 label: None,
-                required_features: 
-                    wgpu::Features::TEXTURE_BINDING_ARRAY | 
-                    wgpu::Features::SAMPLED_TEXTURE_AND_STORAGE_BUFFER_ARRAY_NON_UNIFORM_INDEXING,
+                required_features: wgpu::Features::empty(),
                 required_limits: wgpu::Limits::downlevel_defaults().using_resolution(wgpu_adapter.limits()),
             }, None)
             .await?;
@@ -98,7 +97,7 @@ impl<'a, T: TerminalTarget> TerminalWindow<'a, T> {
             terminal,
             terminal_target,
             terminal_reader,
-            glyph_grid,
+            glyph_grid: Vec::new(),
             glyph_cache,
             winit_window,
             wgpu_config,
@@ -157,14 +156,13 @@ impl<'a, T: TerminalTarget> TerminalWindow<'a, T> {
         self.wgpu_config.height = new_size.y as u32;
         self.wgpu_surface.configure(&self.wgpu_device, &self.wgpu_config);
         // calculate new terminal grid size
-        let glyph_size = self.glyph_cache.get_glyph_size();
+        let glyph_size = self.glyph_cache.get_glyph_atlas().get_glyph_size();
         let new_grid_size = new_size.div_element_wise(glyph_size);
         let new_grid_size = Vector2::new(new_grid_size.x.max(1), new_grid_size.y.max(1));
         let actual_render_size = new_grid_size.mul_element_wise(glyph_size);
         let new_render_scale = actual_render_size.cast::<f32>().unwrap().div_element_wise(new_size.cast::<f32>().unwrap());
         // update gpu
-        let params = self.renderer.get_render_params();
-        params.set_render_scale(&self.wgpu_queue, new_render_scale);
+        self.renderer.update_render_scale(&self.wgpu_queue, new_render_scale);
         {
             // forcefully update terminal grid size
             let terminal = &mut self.terminal.lock().expect("Acquire terminal for size change");
@@ -193,57 +191,37 @@ impl<'a, T: TerminalTarget> TerminalWindow<'a, T> {
         if let Ok(ref terminal) = self.terminal.try_lock() {
             self.terminal_reader.read_terminal(terminal);
         };
-        { 
-            // update glyph data if possible
-            let size = self.terminal_reader.get_size();
-            let cells = self.terminal_reader.get_cells();
-            self.glyph_grid.resize(size);
-            let dst_grid = self.glyph_grid.get_mut_view();
-            for (dst, src) in dst_grid.data.iter_mut().zip(cells.iter()) {
-                let location =  self.glyph_cache.get_glyph_location(src.character, self.current_frame);
-                dst.set_page_index(location.page_index);
-                dst.set_glyph_position(location.glyph_position);
-                dst.set_foreground_colour(Vector4::new(
-                    src.foreground_colour.r,
-                    src.foreground_colour.g,
-                    src.foreground_colour.b,
-                    255,
-                ));
-                dst.set_background_colour(Vector4::new(
-                    src.background_colour.r,
-                    src.background_colour.g,
-                    src.background_colour.b,
-                    255,
-                ));
-            }
+
+        // update glyph data if possible
+        let size = self.terminal_reader.get_size();
+        let cells = self.terminal_reader.get_cells();
+        let glyph_atlas = self.glyph_cache.get_glyph_atlas();
+        let total_glyphs_in_block = glyph_atlas.get_total_glyphs_in_block();
+        self.glyph_grid.resize(size.x*size.y, CellData::default());
+        for (dst, src) in self.glyph_grid.iter_mut().zip(cells.iter()) {
+            let atlas_index = self.glyph_cache.get_glyph_location(src.character, self.current_frame);
+            let atlas_index = Vector2::new(
+                atlas_index.block.x*total_glyphs_in_block.x + atlas_index.position.x,
+                atlas_index.block.y*total_glyphs_in_block.y + atlas_index.position.y,
+            );
+            dst.atlas_index = atlas_index.cast::<u16>().unwrap();
+            dst.colour_foreground = Vector4::new(
+                src.foreground_colour.r,
+                src.foreground_colour.g,
+                src.foreground_colour.b,
+                255,
+            );
+            dst.colour_background = Vector4::new(
+                src.background_colour.r,
+                src.background_colour.g,
+                src.background_colour.b,
+                255,
+            );
+            dst.style_flags = 0u32;
         }
-        {
-            // update glyph grid
-            let cpu_grid = self.glyph_grid.get_view();
-            let gpu_grid = self.renderer.get_glyph_grid();
-            gpu_grid.update_grid(&self.wgpu_queue, &self.wgpu_device, cpu_grid);
-        }
-        {
-            // update glyph atlases page sizes
-            let gpu_pages = self.renderer.get_glyph_atlas();
-            let cpu_pages = self.glyph_cache.get_mut_pages();
-            let page_sizes: Vec<Vector2<usize>> = cpu_pages
-                .iter()
-                .map(|page| page.get_atlas().get_texture_size())
-                .collect();
-            gpu_pages.create_pages_if_changed(&self.wgpu_device, page_sizes.as_slice());
-            // upload glyph atlas data to gpu if dirtied
-            for (i, page) in cpu_pages.iter_mut().enumerate() {
-                let total_changes = page.get_total_changes();
-                if total_changes > 0 {
-                    page.clear_total_changes();
-                    let atlas = page.get_atlas();
-                    let grid_size = atlas.get_grid_size();
-                    let texture_view = atlas.get_texture_view();
-                    gpu_pages.update_page(&self.wgpu_queue, i, texture_view, grid_size);
-                }
-            }
-        }
+        self.renderer.update_grid(&self.wgpu_device, &self.wgpu_queue, self.glyph_grid.as_slice(), size);
+        let glyph_atlas = self.glyph_cache.get_glyph_atlas_mut();
+        self.renderer.update_atlas(&self.wgpu_device, &self.wgpu_queue, glyph_atlas);
     }
 
     fn on_keyboard_input(&mut self, event: winit::event::KeyEvent) {

@@ -421,7 +421,7 @@ impl Parser {
     // interpret number list
     fn read_optional_nonzero_u16(&self) -> NonZeroU16 {
         if self.numbers.len() > 1 {
-            log::warn!("expected optional number got {} numbers", self.numbers.len());
+            log::warn!("expected optional number got {} numbers ({:?})", self.numbers.len(), self);
         }
         let n = self.numbers.first().copied();
         let n = n.unwrap_or(1).max(1);
@@ -542,7 +542,7 @@ impl Parser {
             return Err(ParserError::MissingNumbers { given, expected });
         }
         if given > expected {
-            log::warn!("expected {} numbers but got {}", expected, given);
+            log::warn!("expected {} numbers but got {} ({:?})", expected, given, self);
         }
         Ok(&self.numbers[0..expected])
     }

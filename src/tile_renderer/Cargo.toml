@@ -1,10 +1,11 @@
 [package]
-name = "glyph_grid"
+name = "tile_renderer"
 version = "0.0.1"
 edition = "2021"
 
 [dependencies]
 bytemuck = { workspace = true, features = ["derive" ] }
 cgmath = { workspace = true, features = ["bytemuck"] }
-log = { workspace = true }
 fontdue = { workspace = true }
+wgpu = { workspace = true }
+log = { workspace = true }

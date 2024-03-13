@@ -6,11 +6,13 @@ pub trait TerminalTarget {
     fn set_size(&mut self, size: Vector2<usize>) -> anyhow::Result<Vector2<usize>>;
 }
 
+#[cfg(windows)]
 pub struct ConptyTarget<'a> {
     pub process: &'a mut conpty::Process,
     pub pipe_input: &'a mut conpty::io::PipeWriter,
 }
 
+#[cfg(windows)]
 impl<'a> TerminalTarget for ConptyTarget<'a> {
     fn write_data(&mut self, data: &[u8]) -> anyhow::Result<usize> {
         Ok(self.pipe_input.write(data)?)

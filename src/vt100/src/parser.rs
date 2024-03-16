@@ -4,9 +4,8 @@ use std::num::NonZeroU16;
 use std::fmt;
 use crate::{
     command::Command,
-    key_input::{KeyInput,KeyCode,KeyModifier},
     graphic_style::{GraphicStyle,Rgb8},
-    misc::{EraseMode,Vector2,ScrollRegion},
+    misc::{EraseMode,Vector2,ScrollRegion,CharacterSet,InputMode},
     screen_mode::{ScreenMode},
 };
 
@@ -18,7 +17,6 @@ pub enum ParserError {
     Unhandled,
     MissingNumbers { given: usize, expected: usize }, // given, required
     InvalidEraseMode(u16),
-    InvalidKeyCode(u16),
     InvalidScreenMode(u16),
     NoValidGraphicStyles,
 }
@@ -27,10 +25,9 @@ pub enum ParserError {
 enum ParserContext {
     #[default]
     EntryPoint,                         // ESC
-    AppModeCursor,                      // ESC O
     ControlSequenceIntroducer,          // ESC [
     ControlSequenceIntroducerNumbers,   // ESC [ <n>
-    Question,                           // ESC [ ?
+    CommonPrivateMode,                  // ESC [ ?
     Exclamation,                        // ESC [ !
     ScreenMode,                         // ESC [ =
     Designate,                          // ESC (
@@ -116,10 +113,9 @@ impl Parser {
             ParserState::Characters => {
                 match self.context {
                     ParserContext::EntryPoint => self.read_entry_point(b),
-                    ParserContext::AppModeCursor => self.read_app_mode_cursor(b),
                     ParserContext::ControlSequenceIntroducer => self.read_control_sequence_introducer(b),
                     ParserContext::ControlSequenceIntroducerNumbers => self.read_control_sequence_introducer_numbers(b),
-                    ParserContext::Question => self.read_question(b),
+                    ParserContext::CommonPrivateMode => self.read_common_private_mode(b),
                     ParserContext::Exclamation => self.read_exclamation(b),
                     ParserContext::ScreenMode => self.read_screen_mode(b),
                     ParserContext::Designate => self.read_designate(b),
@@ -141,14 +137,10 @@ impl Parser {
             b'E' => Ok(Command::MoveCursorReverseIndex),
             b'7' => Ok(Command::SaveCursorToMemory),
             b'8' => Ok(Command::RestoreCursorFromMemory),
-            b'=' => Ok(Command::EnableKeypadApplicationMode),
-            b'>' => Ok(Command::EnableKeypadNumericMode),
+            b'=' => Ok(Command::SetKeypadMode(InputMode::Application)),
+            b'>' => Ok(Command::SetKeypadMode(InputMode::Numeric)),
             b'H' => Ok(Command::SetTabStopAtCurrentColumn),
             b'M' => Ok(Command::MoveCursorUp(n_default)),
-            b'O' => {
-                self.context = ParserContext::AppModeCursor;
-                Err(ParserError::Pending)
-            },
             b'[' => {
                 self.context = ParserContext::ControlSequenceIntroducer;
                 Err(ParserError::Pending)
@@ -166,31 +158,13 @@ impl Parser {
         }
     }
 
-    fn read_app_mode_cursor(&mut self, b: u8) -> Result<Command, ParserError> {
-        // @mark: ESC O
-        match b {
-            b'A' => Ok(Command::KeyInput(KeyInput::new_simple(KeyCode::UpArrow))),
-            b'B' => Ok(Command::KeyInput(KeyInput::new_simple(KeyCode::DownArrow))),
-            b'C' => Ok(Command::KeyInput(KeyInput::new_simple(KeyCode::RightArrow))),
-            b'D' => Ok(Command::KeyInput(KeyInput::new_simple(KeyCode::LeftArrow))),
-            b'H' => Ok(Command::KeyInput(KeyInput::new_simple(KeyCode::Home))),
-            b'F' => Ok(Command::KeyInput(KeyInput::new_simple(KeyCode::End))),
-            b'P' => Ok(Command::KeyInput(KeyInput::new_simple(KeyCode::F1))),
-            b'Q' => Ok(Command::KeyInput(KeyInput::new_simple(KeyCode::F2))),
-            b'R' => Ok(Command::KeyInput(KeyInput::new_simple(KeyCode::F3))),
-            b'S' => Ok(Command::KeyInput(KeyInput::new_simple(KeyCode::F4))),
-            _ => Err(ParserError::Unhandled),
-        }
-    }
-
-
     fn read_control_sequence_introducer(&mut self, b: u8) -> Result<Command, ParserError> {
         // @mark: ESC [
         match b {
             b's' => Ok(Command::SaveCursorToMemory),
             b'u' => Ok(Command::RestoreCursorFromMemory),
             b'?' => {
-                self.context = ParserContext::Question;
+                self.context = ParserContext::CommonPrivateMode;
                 self.state = ParserState::Numbers; 
                 Err(ParserError::Pending)
             },
@@ -212,17 +186,6 @@ impl Parser {
     }
 
     fn read_control_sequence_introducer_numbers(&mut self, b: u8) -> Result<Command, ParserError> {
-        // @mark: ESC [ 1 ; 5
-        if self.numbers.first() == Some(&1) && self.numbers.get(1) == Some(&5) {
-            match b {
-                b'A' => return Ok(Command::KeyInput(KeyInput { modifier: KeyModifier::Ctrl, code: KeyCode::UpArrow })),
-                b'B' => return Ok(Command::KeyInput(KeyInput { modifier: KeyModifier::Ctrl, code: KeyCode::DownArrow })),
-                b'C' => return Ok(Command::KeyInput(KeyInput { modifier: KeyModifier::Ctrl, code: KeyCode::RightArrow })),
-                b'D' => return Ok(Command::KeyInput(KeyInput { modifier: KeyModifier::Ctrl, code: KeyCode::LeftArrow })),
-                _ => (),
-            }
-        }
-
         // @mark: ESC [ <n>
         match b {
             b'A' => Ok(Command::MoveCursorUp(self.read_optional_nonzero_u16())),
@@ -252,7 +215,6 @@ impl Parser {
             },
             b'f' => Ok(Command::MoveCursorPositionViewport(self.try_read_xy()?)),
             b'm' => Ok(self.try_read_graphics_command()?),
-            b'~' => Ok(Command::KeyInput(KeyInput::new_simple(self.try_read_key_code()?))),
             b'r' => Ok(Command::SetScrollRegion(self.read_scrolling_region())),
             b'I' => Ok(Command::AdvanceCursorToTabStop(self.read_optional_nonzero_u16())),
             b'Z' => Ok(Command::ReverseCursorToTabStop(self.read_optional_nonzero_u16())),
@@ -273,23 +235,23 @@ impl Parser {
         }
     }
 
-    fn read_question(&self, b: u8) -> Result<Command, ParserError> {
+    fn read_common_private_mode(&self, b: u8) -> Result<Command, ParserError> {
         // @mark: ESC [ ? <n>
         let n = self.try_get_numbers(1)?;
         let n = n[0];
         match (n, b) {
-            (   1, b'h') => Ok(Command::EnableCursorKeysApplicationMode),
-            (   1, b'l') => Ok(Command::EnableCursorKeysNumericMode),
+            (   1, b'h') => Ok(Command::SetCursorKeysMode(InputMode::Application)),
+            (   1, b'l') => Ok(Command::SetCursorKeysMode(InputMode::Numeric)),
             (   3, b'h') => Ok(Command::SetConsoleWidth(NonZeroU16::new(132).unwrap())),
             (   3, b'l') => Ok(Command::SetConsoleWidth(NonZeroU16::new(80).unwrap())),
-            (  12, b'h') => Ok(Command::EnableCursorBlinking),
-            (  12, b'l') => Ok(Command::DisableCursorBlinking),
-            (  25, b'h') => Ok(Command::ShowCursor),
-            (  25, b'l') => Ok(Command::HideCursor),
+            (  12, b'h') => Ok(Command::SetCursorBlinking(true)),
+            (  12, b'l') => Ok(Command::SetCursorBlinking(false)),
+            (  25, b'h') => Ok(Command::SetCursorVisible(true)),
+            (  25, b'l') => Ok(Command::SetCursorVisible(false)),
             (  47, b'h') => Ok(Command::SaveScreen),
             (  47, b'l') => Ok(Command::RestoreScreen),
-            (1049, b'h') => Ok(Command::EnableAlternateBuffer),
-            (1049, b'l') => Ok(Command::DisableAlternateBuffer),
+            (1049, b'h') => Ok(Command::SetAlternateBuffer(true)),
+            (1049, b'l') => Ok(Command::SetAlternateBuffer(false)),
             _ => Err(ParserError::Unhandled),
         }
     }
@@ -306,11 +268,11 @@ impl Parser {
         // @mark: ESC [ = <n>
         match b {
             b'h' => match self.try_get_numbers(1)?.first().unwrap() {
-                7 => Ok(Command::EnableLineWrapping),
+                7 => Ok(Command::SetLineWrapping(true)),
                 n => Ok(Command::SetScreenMode(self.try_read_screen_mode(*n)?)),
             },
             b'l' => match self.try_get_numbers(1)?.first().unwrap() {
-                7 => Ok(Command::DisableLineWrapping),
+                7 => Ok(Command::SetLineWrapping(false)),
                 n => Ok(Command::ResetScreenMode(self.try_read_screen_mode(*n)?)),
             },
             _ => Err(ParserError::Unhandled),
@@ -320,8 +282,8 @@ impl Parser {
     fn read_designate(&mut self, b: u8) -> Result<Command, ParserError> {
         // @mark: ESC (
         match b {
-            b'0' => Ok(Command::EnableLineDrawingMode),
-            b'B' => Ok(Command::EnableAsciiMode),
+            b'0' => Ok(Command::SetCharacterSet(CharacterSet::LineDrawing)),
+            b'B' => Ok(Command::SetCharacterSet(CharacterSet::Ascii)),
             _ => Err(ParserError::Unhandled),
         }
     }
@@ -500,26 +462,6 @@ impl Parser {
             return Err(ParserError::NoValidGraphicStyles);
         }
         Ok(Command::SetGraphicStyles(self.graphic_styles.as_slice()))
-    }
-
-    fn try_read_key_code(&self) -> Result<KeyCode, ParserError> {
-        let n = self.try_get_numbers(1)?;
-        let n = n[0];
-        match n {
-             2 => Ok(KeyCode::Insert),
-             3 => Ok(KeyCode::Delete),
-             5 => Ok(KeyCode::PageUp),
-             6 => Ok(KeyCode::PageDown),
-            15 => Ok(KeyCode::F5),
-            17 => Ok(KeyCode::F6),
-            18 => Ok(KeyCode::F7),
-            19 => Ok(KeyCode::F8),
-            20 => Ok(KeyCode::F9),
-            21 => Ok(KeyCode::F10),
-            23 => Ok(KeyCode::F11),
-            24 => Ok(KeyCode::F12),
-            _ => Err(ParserError::InvalidKeyCode(n)),
-        }
     }
 
     fn read_scrolling_region(&self) -> Option<ScrollRegion> {

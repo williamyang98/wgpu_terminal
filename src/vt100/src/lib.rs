@@ -1,19 +1,18 @@
 pub mod parser;
 pub mod command;
 pub mod graphic_style;
-pub mod key_input;
 pub mod misc;
 pub mod screen_mode;
+pub mod key_input;
 
 #[cfg(test)]
 mod tests {
     use crate::{
         command::Command,
         parser::{Parser,ParserError},
-        key_input::{KeyInput,KeyCode,KeyModifier},
-        misc::{Vector2,EraseMode,ScrollRegion},
+        misc::{Vector2,EraseMode,ScrollRegion,CharacterSet,InputMode},
         screen_mode::ScreenMode,
-        graphic_style::GraphicStyle,
+        graphic_style::{GraphicStyle,Rgb8},
     };
     use std::num::NonZeroU16;
 
@@ -89,58 +88,6 @@ mod tests {
     }
 
     #[test]
-    fn valid_key_codes() {
-        let sequences = [
-            ("OA", KeyCode::UpArrow),
-            ("OB", KeyCode::DownArrow),
-            ("OC", KeyCode::RightArrow),
-            ("OD", KeyCode::LeftArrow),
-            ("OH", KeyCode::Home),
-            ("OF", KeyCode::End),
-            ("OP", KeyCode::F1),
-            ("OQ", KeyCode::F2),
-            ("OR", KeyCode::F3),
-            ("OS", KeyCode::F4),
-            ("[15~", KeyCode::F5),
-            ("[17~", KeyCode::F6),
-            ("[18~", KeyCode::F7),
-            ("[19~", KeyCode::F8),
-            ("[20~", KeyCode::F9),
-            ("[21~", KeyCode::F10),
-            ("[23~", KeyCode::F11),
-            ("[24~", KeyCode::F12),
-            ("[2~", KeyCode::Insert),
-            ("[3~", KeyCode::Delete),
-            ("[5~", KeyCode::PageUp),
-            ("[6~", KeyCode::PageDown),
-        ];
-        for (seq, code) in sequences {
-            let key_input = KeyInput {
-                modifier: KeyModifier::None,
-                code,
-            };
-            test_valid_sequence(seq.as_bytes(), Command::KeyInput(key_input));
-        }
-    }
-
-    #[test]
-    fn valid_key_inputs_with_ctrl_modifier() {
-        let sequences = [
-            ("[1;5A", KeyCode::UpArrow),
-            ("[1;5B", KeyCode::DownArrow),
-            ("[1;5C", KeyCode::RightArrow),
-            ("[1;5D", KeyCode::LeftArrow),
-        ];
-        for (seq, code) in sequences {
-            let key_input = KeyInput {
-                modifier: KeyModifier::Ctrl,
-                code,
-            };
-            test_valid_sequence(seq.as_bytes(), Command::KeyInput(key_input));
-        }
-    }
-
-    #[test]
     fn valid_single_move_cursor() {
         let n_default = NonZeroU16::new(1).unwrap();
         test_valid_sequence(b"A", Command::MoveCursorUp(n_default));
@@ -195,20 +142,20 @@ mod tests {
 
     #[test]
     fn valid_private_modes_nonstandard() {
-        test_valid_sequence(b"=", Command::EnableKeypadApplicationMode);
-        test_valid_sequence(b">", Command::EnableKeypadNumericMode);
-        test_valid_sequence(b"[?1h", Command::EnableCursorKeysApplicationMode);
-        test_valid_sequence(b"[?1l", Command::EnableCursorKeysNumericMode);
+        test_valid_sequence(b"=", Command::SetKeypadMode(InputMode::Application));
+        test_valid_sequence(b">", Command::SetKeypadMode(InputMode::Numeric));
+        test_valid_sequence(b"[?1h", Command::SetCursorKeysMode(InputMode::Application));
+        test_valid_sequence(b"[?1l", Command::SetCursorKeysMode(InputMode::Numeric));
         test_valid_sequence(b"[?3h", Command::SetConsoleWidth(NonZeroU16::new(132).unwrap()));
         test_valid_sequence(b"[?3l", Command::SetConsoleWidth(NonZeroU16::new(80).unwrap()));
-        test_valid_sequence(b"[?12h", Command::EnableCursorBlinking);
-        test_valid_sequence(b"[?12l", Command::DisableCursorBlinking);
-        test_valid_sequence(b"[?25h", Command::ShowCursor);
-        test_valid_sequence(b"[?25l", Command::HideCursor);
+        test_valid_sequence(b"[?12h", Command::SetCursorBlinking(true));
+        test_valid_sequence(b"[?12l", Command::SetCursorBlinking(false));
+        test_valid_sequence(b"[?25h", Command::SetCursorVisible(true));
+        test_valid_sequence(b"[?25l", Command::SetCursorVisible(false));
         test_valid_sequence(b"[?47h", Command::SaveScreen);
         test_valid_sequence(b"[?47l", Command::RestoreScreen);
-        test_valid_sequence(b"[?1049h", Command::EnableAlternateBuffer);
-        test_valid_sequence(b"[?1049l", Command::DisableAlternateBuffer);
+        test_valid_sequence(b"[?1049h", Command::SetAlternateBuffer(true));
+        test_valid_sequence(b"[?1049l", Command::SetAlternateBuffer(false));
     }
 
     #[test]
@@ -237,7 +184,6 @@ mod tests {
 
     #[test]
     fn valid_set_colour_rgb() {
-        use crate::graphic_style::Rgb8;
         for r in 0..=260 {
             for g in (0..=260).step_by(20) {
                 for b in (0..=260).step_by(20) {
@@ -262,7 +208,6 @@ mod tests {
 
     #[test]
     fn valid_set_single_graphic_style() {
-        use crate::graphic_style::GraphicStyle;
         for v in 0..255 {
             if let Some(style) = GraphicStyle::try_from_u16(v) {
                 test_valid_sequence(format!("[{}m",v).as_bytes(), Command::SetGraphicStyles(&[style]));
@@ -272,7 +217,6 @@ mod tests {
 
     #[test]
     fn valid_set_multiple_graphic_styles() {
-        use crate::graphic_style::GraphicStyle;
         let codes  = 0..255u16;
         let mut numbers_string = String::new();
         let mut valid_styles: Vec<GraphicStyle> = vec![];
@@ -290,7 +234,6 @@ mod tests {
 
     #[test]
     fn valid_set_multiple_graphic_styles_with_some_invalid() {
-        use crate::graphic_style::GraphicStyle;
         let codes  = 0..255u16;
         let mut numbers_string = String::new();
         let mut valid_styles: Vec<GraphicStyle> = vec![];
@@ -383,8 +326,8 @@ mod tests {
 
     #[test]
     fn valid_designate_character_set() {
-        test_valid_sequence(b"(0", Command::EnableLineDrawingMode);
-        test_valid_sequence(b"(B", Command::EnableAsciiMode);
+        test_valid_sequence(b"(0", Command::SetCharacterSet(CharacterSet::LineDrawing));
+        test_valid_sequence(b"(B", Command::SetCharacterSet(CharacterSet::Ascii));
     }
 
     #[test]
@@ -411,8 +354,8 @@ mod tests {
 
     #[test]
     fn valid_toggle_line_wrap() {
-        test_valid_sequence(b"[=7h", Command::EnableLineWrapping);
-        test_valid_sequence(b"[=7l", Command::DisableLineWrapping);
+        test_valid_sequence(b"[=7h", Command::SetLineWrapping(true));
+        test_valid_sequence(b"[=7l", Command::SetLineWrapping(false));
     }
 
     #[test]
@@ -426,7 +369,6 @@ mod tests {
 
     #[test]
     fn invalid_set_multiple_graphic_styles() {
-        use crate::graphic_style::GraphicStyle;
         let codes  = 0..255u16;
         let mut numbers_string = String::new();
         for code in codes {
@@ -442,7 +384,6 @@ mod tests {
 
     #[test]
     fn invalid_set_single_graphic_style() {
-        use crate::graphic_style::GraphicStyle;
         for v in 0..255 {
             if GraphicStyle::try_from_u16(v).is_none() {
                 test_invalid_sequence(format!("[{}m", v).as_bytes(), None, ParserError::NoValidGraphicStyles);
@@ -459,19 +400,6 @@ mod tests {
                 test_invalid_sequence(seq.as_bytes(), None, ParserError::Unhandled);
             }
         }
-    }
-
-    #[test]
-    fn invalid_key_codes() {
-        let invalid_codes: &[u16] = &[255, 1024, 2048];
-        for code in invalid_codes {
-            test_invalid_sequence(format!("[{}~", code).as_bytes(), None, ParserError::InvalidKeyCode(*code));
-        }
-    }
-
-    #[test]
-    fn invalid_missing_key_code() {
-        test_invalid_sequence(b"[~", None, ParserError::MissingNumbers { given: 0, expected: 1 });
     }
 
     #[test]

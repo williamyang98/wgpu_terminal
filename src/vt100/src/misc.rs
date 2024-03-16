@@ -44,3 +44,15 @@ impl EraseMode {
         }
     }
 }
+
+#[derive(Clone,Copy,Debug,PartialEq,Eq)]
+pub enum CharacterSet {
+    Ascii,
+    LineDrawing,
+}
+
+#[derive(Clone,Copy,Debug,PartialEq,Eq)]
+pub enum InputMode {
+    Application,
+    Numeric,
+}

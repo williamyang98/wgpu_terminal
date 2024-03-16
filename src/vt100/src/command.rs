@@ -1,10 +1,9 @@
 use std::num::NonZeroU16;
 
 use crate::{
-    misc::{Vector2,EraseMode,ScrollRegion},
+    misc::{Vector2,EraseMode,ScrollRegion,CharacterSet,InputMode},
     graphic_style::{GraphicStyle,Rgb8},
     screen_mode::{ScreenMode},
-    key_input::KeyInput,
 };
 
 #[derive(Clone,Copy,Debug,PartialEq)]
@@ -23,10 +22,8 @@ pub enum Command<'a> {
     MoveCursorVerticalAbsolute(NonZeroU16),
     MoveCursorPositionViewport(Vector2<NonZeroU16>),
     // cursor visibility
-    EnableCursorBlinking,
-    DisableCursorBlinking,
-    ShowCursor,
-    HideCursor,
+    SetCursorBlinking(bool),
+    SetCursorVisible(bool),
     // viewport positioning
     ScrollUp(NonZeroU16),
     ScrollDown(NonZeroU16),
@@ -45,10 +42,8 @@ pub enum Command<'a> {
     SetForegroundColourRgb(Rgb8),
     SetBackgroundColourRgb(Rgb8),
     // mode changes
-    EnableKeypadApplicationMode,
-    EnableKeypadNumericMode,
-    EnableCursorKeysApplicationMode,
-    EnableCursorKeysNumericMode,
+    SetKeypadMode(InputMode),
+    SetCursorKeysMode(InputMode),
     // query state
     QueryCursorPosition,
     QueryTerminalIdentity,
@@ -59,27 +54,22 @@ pub enum Command<'a> {
     ClearCurrentTabStop,
     ClearAllTabStops,
     // designate character set
-    EnableLineDrawingMode,
-    EnableAsciiMode,
+    SetCharacterSet(CharacterSet),
     // scrolling margins
     SetScrollRegion(Option<ScrollRegion>),
     // operating system command 
     SetWindowTitle(&'a [u8]),
     SetHyperlink { tag: &'a [u8], link: &'a [u8] },
     // alternate screen buffer
-    EnableAlternateBuffer,
-    DisableAlternateBuffer,
+    SetAlternateBuffer(bool),
+    SetLineWrapping(bool),
     SaveScreen,
     RestoreScreen,
     SetScreenMode(ScreenMode),
     ResetScreenMode(ScreenMode),
-    EnableLineWrapping,
-    DisableLineWrapping,
     // window width
     SetConsoleWidth(NonZeroU16),
     // soft reset
     SoftReset,
-    // input sequences
-    KeyInput(KeyInput),
 }
 

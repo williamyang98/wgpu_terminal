@@ -31,7 +31,6 @@ impl Default for CursorStatus {
     }
 }
 
-
 pub struct Terminal {
     viewport: Viewport,
     cursor_status: CursorStatus,
@@ -394,17 +393,11 @@ impl Handler for Terminal {
                 }
             },
             // cursor status
-            Vt100Command::EnableCursorBlinking => {
-                self.cursor_status.is_blinking = true;
+            Vt100Command::SetCursorBlinking(is_blink) => {
+                self.cursor_status.is_blinking = *is_blink;
             },
-            Vt100Command::DisableCursorBlinking => {
-                self.cursor_status.is_blinking = false;
-            },
-            Vt100Command::HideCursor => {
-                self.cursor_status.is_visible = false;
-            },
-            Vt100Command::ShowCursor => {
-                self.cursor_status.is_visible = true;
+            Vt100Command::SetCursorVisible(is_visible) => {
+                self.cursor_status.is_visible = *is_visible;
             },
             _ => {
                 log::info!("[vt100] Unhandled: {:?}", c);

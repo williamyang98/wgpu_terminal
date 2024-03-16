@@ -1,4 +1,3 @@
-use std::sync::{Arc,Mutex};
 use std::io::Read;
 use cgmath::{Vector2,Vector4,ElementWise};
 use tile_renderer::{
@@ -14,16 +13,10 @@ use winit::{
     event_loop::EventLoopWindowTarget,
     window::Window,
 };
-use crate::{
-    frame_counter::FrameCounter,
-    terminal_target::TerminalTarget,
-    terminal_reader::TerminalReader,
-};
+use crate::frame_counter::FrameCounter;
 
-pub struct TerminalWindow<'a, T> {
-    terminal: Arc<Mutex<Terminal>>, 
-    terminal_target: &'a mut T,
-    terminal_reader: TerminalReader,
+pub struct TerminalWindow<'a> {
+    terminal: Terminal, 
     glyph_grid: Vec<CellData>,
     glyph_cache: GlyphCache,
     winit_window: &'a Window,
@@ -36,11 +29,10 @@ pub struct TerminalWindow<'a, T> {
     frame_counter: FrameCounter,
 }
 
-impl<'a, T: TerminalTarget> TerminalWindow<'a, T> {
+impl<'a> TerminalWindow<'a> {
     pub async fn new(
         winit_window: &'a Window,
-        terminal: Arc<Mutex<Terminal>>, 
-        terminal_target: &'a mut T,
+        terminal: Terminal, 
         font_filename: String, font_size: f32,
     ) -> anyhow::Result<Self> 
     {
@@ -90,16 +82,9 @@ impl<'a, T: TerminalTarget> TerminalWindow<'a, T> {
         let max_texture_size = Vector2::new(max_texture_size, max_texture_size);
         let glyph_generator = Box::new(FontdueGlyphGenerator::new(font, font_size));
         let glyph_cache = GlyphCache::new(glyph_generator, max_texture_size);
-        let mut terminal_reader = TerminalReader::default();
-        // terminal grid
-        let initial_grid_size = Vector2::new(128,64);
-        terminal_target.set_size(initial_grid_size)?;
-        terminal_reader.set_size(initial_grid_size);
 
         Ok(Self {
             terminal,
-            terminal_target,
-            terminal_reader,
             glyph_grid: Vec::new(),
             glyph_cache,
             winit_window,
@@ -135,19 +120,20 @@ impl<'a, T: TerminalTarget> TerminalWindow<'a, T> {
 
     fn on_mouse_wheel(&mut self, delta: winit::event::MouseScrollDelta) {
         use winit::event::MouseScrollDelta as Delta;
+        let renderer = self.terminal.get_renderer_mut();
         match delta {
             Delta::LineDelta(_x, y) => {
                 if y > 0.0 {
-                    self.terminal_reader.scroll_up(1);
+                    renderer.scroll_up(1);
                 } else {
-                    self.terminal_reader.scroll_down(1);
+                    renderer.scroll_down(1);
                 }
             },
             Delta::PixelDelta(delta) => {
                 if delta.y > 0.0 {
-                    self.terminal_reader.scroll_up(1);
+                    renderer.scroll_up(1);
                 } else {
-                    self.terminal_reader.scroll_down(1);
+                    renderer.scroll_down(1);
                 }
             },
         }
@@ -166,13 +152,7 @@ impl<'a, T: TerminalTarget> TerminalWindow<'a, T> {
         let new_render_scale = actual_render_size.cast::<f32>().unwrap().div_element_wise(new_size.cast::<f32>().unwrap());
         // update gpu
         self.renderer.update_render_scale(&self.wgpu_queue, new_render_scale);
-        {
-            // forcefully update terminal grid size
-            let terminal = &mut self.terminal.lock().expect("Acquire terminal for size change");
-            let viewport = terminal.get_viewport_mut();
-            viewport.set_size(new_grid_size);
-        }
-        let _ = self.terminal_target.set_size(new_grid_size);
+        self.terminal.set_size(new_grid_size);
         self.winit_window.request_redraw();
     }
 
@@ -191,13 +171,13 @@ impl<'a, T: TerminalTarget> TerminalWindow<'a, T> {
     fn update_grid_from_terminal(&mut self) {
         self.current_frame += 1;
         self.frame_counter.update();
-        if let Ok(ref terminal) = self.terminal.try_lock() {
-            self.terminal_reader.read_terminal(terminal);
-        };
-
-        // update glyph data if possible
-        let size = self.terminal_reader.get_size();
-        let cells = self.terminal_reader.get_cells();
+        if !self.terminal.try_render() {
+            return;
+        }
+ 
+        let renderer = self.terminal.get_renderer();
+        let size = renderer.get_size();
+        let cells = renderer.get_cells();
         let glyph_atlas = self.glyph_cache.get_glyph_atlas();
         let total_glyphs_in_block = glyph_atlas.get_total_glyphs_in_block();
         self.glyph_grid.resize(size.x*size.y, CellData::default());
@@ -228,53 +208,87 @@ impl<'a, T: TerminalTarget> TerminalWindow<'a, T> {
     }
 
     fn on_keyboard_input(&mut self, event: winit::event::KeyEvent) {
+        use terminal::terminal_keyboard::KeyCode as TKey;
+        use vt100::key_input::{ModifierKey, ArrowKey, FunctionKey};
+        // modifier keys listen to press/release
+        if let PhysicalKey::Code(code) = event.physical_key {
+            let keyboard = self.terminal.get_keyboard_mut();
+            match event.state {
+                ElementState::Pressed => match code {
+                    KeyCode::AltLeft      => return keyboard.on_key_press(TKey::ModifierKey(ModifierKey::Alt)),
+                    KeyCode::AltRight     => return keyboard.on_key_press(TKey::ModifierKey(ModifierKey::Alt)),
+                    KeyCode::ControlLeft  => return keyboard.on_key_press(TKey::ModifierKey(ModifierKey::Ctrl)),
+                    KeyCode::ControlRight => return keyboard.on_key_press(TKey::ModifierKey(ModifierKey::Ctrl)),
+                    KeyCode::ShiftLeft    => return keyboard.on_key_press(TKey::ModifierKey(ModifierKey::Shift)),
+                    KeyCode::ShiftRight   => return keyboard.on_key_press(TKey::ModifierKey(ModifierKey::Shift)),
+                    _ => {},
+                },
+                ElementState::Released => match code {
+                    KeyCode::AltLeft      => return keyboard.on_key_release(TKey::ModifierKey(ModifierKey::Alt)),
+                    KeyCode::AltRight     => return keyboard.on_key_release(TKey::ModifierKey(ModifierKey::Alt)),
+                    KeyCode::ControlLeft  => return keyboard.on_key_release(TKey::ModifierKey(ModifierKey::Ctrl)),
+                    KeyCode::ControlRight => return keyboard.on_key_release(TKey::ModifierKey(ModifierKey::Ctrl)),
+                    KeyCode::ShiftLeft    => return keyboard.on_key_release(TKey::ModifierKey(ModifierKey::Shift)),
+                    KeyCode::ShiftRight   => return keyboard.on_key_release(TKey::ModifierKey(ModifierKey::Shift)),
+                    _ => {},
+                },
+            };
+        };
+
         if event.state != ElementState::Pressed {
             return;
         }
 
         if let PhysicalKey::Code(code) = event.physical_key {
-            if let Some(data) = convert_keycode_to_bytes(code) {
-                let _ = self.terminal_target.write_data(data);
-                self.terminal_reader.scroll_to_bottom();
-                return;
+            let keyboard = self.terminal.get_keyboard_mut();
+            match code {
+                KeyCode::ArrowUp    => return keyboard.on_key_press(TKey::ArrowKey(ArrowKey::Up)),
+                KeyCode::ArrowDown  => return keyboard.on_key_press(TKey::ArrowKey(ArrowKey::Down)),
+                KeyCode::ArrowLeft  => return keyboard.on_key_press(TKey::ArrowKey(ArrowKey::Left)),
+                KeyCode::ArrowRight => return keyboard.on_key_press(TKey::ArrowKey(ArrowKey::Right)),
+                _ => {},
             }
-        }
-
-        if let Key::Character(string) = event.logical_key {
-            let _ = self.terminal_target.write_data(string.as_bytes());
-            self.terminal_reader.scroll_to_bottom();
-            return;
         }
 
         if let PhysicalKey::Code(code) = event.physical_key {
-            let size = self.terminal_reader.get_size();
-            let mut has_code = true;
+            let keyboard = self.terminal.get_keyboard_mut();
             match code {
-                KeyCode::End => self.terminal_reader.scroll_to_bottom(),
-                KeyCode::Home => self.terminal_reader.scroll_to_top(),
-                KeyCode::PageDown => self.terminal_reader.scroll_down(size.y),
-                KeyCode::PageUp => self.terminal_reader.scroll_up(size.y),
-                _ => {
-                    has_code = false; 
-                },
-            };
-            if has_code {
-                return;
+                KeyCode::Escape    => return keyboard.on_key_press(TKey::FunctionKey(FunctionKey::Escape)),
+                KeyCode::Tab       => return keyboard.on_key_press(TKey::FunctionKey(FunctionKey::Tab)),
+                KeyCode::Backspace => return keyboard.on_key_press(TKey::FunctionKey(FunctionKey::Backspace)),
+                KeyCode::Enter     => return keyboard.on_key_press(TKey::FunctionKey(FunctionKey::Enter)),
+                KeyCode::Delete    => return keyboard.on_key_press(TKey::FunctionKey(FunctionKey::Delete)),
+                _ => {},
             }
         }
-    }
-}
 
-fn convert_keycode_to_bytes(code: KeyCode) -> Option<&'static [u8]> {
-    match code {
-        KeyCode::Enter => Some(b"\x0D\n"),
-        KeyCode::Tab => Some(b"\x09"),
-        KeyCode::Backspace => Some(b"\x08"),
-        KeyCode::Space => Some(b" "),
-        KeyCode::ArrowUp => Some(b"\x1b[A"),
-        KeyCode::ArrowDown => Some(b"\x1b[B"),
-        KeyCode::ArrowRight => Some(b"\x1b[C"),
-        KeyCode::ArrowLeft => Some(b"\x1b[D"),
-        _ => None,
+        if let PhysicalKey::Code(code) = event.physical_key {
+            let renderer = self.terminal.get_renderer_mut();
+            let size = renderer.get_size();
+            match code {
+                KeyCode::End      => return renderer.scroll_to_bottom(),
+                KeyCode::Home     => return renderer.scroll_to_top(),
+                KeyCode::PageDown => return renderer.scroll_down(size.y),
+                KeyCode::PageUp   => return renderer.scroll_up(size.y),
+                _ => {},
+            }
+        }
+
+        if event.physical_key == PhysicalKey::Code(KeyCode::Space) {
+            let keyboard = self.terminal.get_keyboard_mut();
+            keyboard.on_key_press(TKey::Char(' '));
+            let renderer = self.terminal.get_renderer_mut();
+            renderer.scroll_to_bottom();
+            return;
+        }
+        if let Key::Character(string) = event.logical_key {
+            let keyboard = self.terminal.get_keyboard_mut();
+            for c in string.chars() {
+                keyboard.on_key_press(TKey::Char(c));
+            }
+            let renderer = self.terminal.get_renderer_mut();
+            renderer.scroll_to_bottom();
+            return;
+        }
     }
 }

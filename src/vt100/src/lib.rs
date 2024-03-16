@@ -368,6 +368,12 @@ mod tests {
     }
 
     #[test]
+    fn valid_bracketed_paste_mode() {
+        test_valid_sequence(b"[?2004h", Command::SetBracketedPasteMode(true));
+        test_valid_sequence(b"[?2004l", Command::SetBracketedPasteMode(false));
+    }
+
+    #[test]
     fn invalid_set_multiple_graphic_styles() {
         let codes  = 0..255u16;
         let mut numbers_string = String::new();

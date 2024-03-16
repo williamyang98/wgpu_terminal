@@ -1,0 +1,19 @@
+[package]
+name = "terminal_process"
+version = "0.0.1"
+edition = "2021"
+
+[dependencies]
+cgmath = { workspace = true, features = ["bytemuck"] }
+log = { workspace = true }
+terminal = { version = "0.0.1", path = "../terminal" }
+
+[target.'cfg(windows)'.dependencies]
+conpty = { version = "0.5.1" }
+
+[target.'cfg(unix)'.dependencies.nix]
+version = "0.28.0"
+features = [
+    "term", 
+    "process",
+]

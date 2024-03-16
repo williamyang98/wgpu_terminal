@@ -15,13 +15,13 @@ enum State {
     Vt100,
 }
 
-pub struct Parser {
+pub struct TerminalParser {
     state: State,
     utf8_parser: Utf8Parser,
     vt100_parser: Vt100Parser,
 }
 
-impl Default for Parser {
+impl Default for TerminalParser {
     fn default() -> Self {
         Self {
             state: State::Byte,
@@ -31,7 +31,7 @@ impl Default for Parser {
     }
 }
 
-pub trait Handler {
+pub trait TerminalParserHandler {
     fn on_unhandled_byte(&mut self, byte: u8);
     fn on_ascii_data(&mut self, buf: &[u8]);
     fn on_utf8(&mut self, character: char);
@@ -40,8 +40,8 @@ pub trait Handler {
     fn on_vt100_error(&mut self, error: &Vt100ParserError, parser: &Vt100Parser);
 }
 
-impl Parser {
-    pub fn parse_bytes(&mut self, mut buf: &[u8], handler: &mut impl Handler) {
+impl TerminalParser {
+    pub fn parse_bytes(&mut self, mut buf: &[u8], handler: &mut impl TerminalParserHandler) {
         while !buf.is_empty() {
             match self.state {
                 State::Byte => {

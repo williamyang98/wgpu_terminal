@@ -252,6 +252,8 @@ impl Parser {
             (  47, b'l') => Ok(Command::RestoreScreen),
             (1049, b'h') => Ok(Command::SetAlternateBuffer(true)),
             (1049, b'l') => Ok(Command::SetAlternateBuffer(false)),
+            (2004, b'h') => Ok(Command::SetBracketedPasteMode(true)),
+            (2004, b'l') => Ok(Command::SetBracketedPasteMode(false)),
             _ => Err(ParserError::Unhandled),
         }
     }

@@ -58,6 +58,7 @@ pub enum Command<'a> {
     // scrolling margins
     SetScrollRegion(Option<ScrollRegion>),
     // operating system command 
+    SetBracketedPasteMode(bool),
     SetWindowTitle(&'a [u8]),
     SetHyperlink { tag: &'a [u8], link: &'a [u8] },
     // alternate screen buffer

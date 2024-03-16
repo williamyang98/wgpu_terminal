@@ -10,6 +10,7 @@ pub struct LineStatus {
     pub is_linebreak: bool,
 }
 
+#[derive(Clone,Debug)]
 pub struct Viewport {
     cursor: Vector2<usize>,
     size: Vector2<usize>,

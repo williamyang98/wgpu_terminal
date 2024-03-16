@@ -7,7 +7,9 @@ edition = "2021"
 bytemuck = { workspace = true, features = ["derive" ] }
 cgmath = { workspace = true, features = ["bytemuck"] }
 # terminal
+vt100 = { version = "0.0.1", path = "../vt100" }
 terminal = { version = "0.0.1", path = "../terminal" }
+terminal_process = { version = "0.0.1", path = "../terminal_process" }
 # graphics
 fontdue = { workspace = true }
 tile_renderer = { version = "0.0.1", path = "../tile_renderer" }

@@ -1,41 +1,33 @@
+use crate::viewport::Viewport;
+use crate::primitives::Cell;
 use cgmath::Vector2;
-use terminal::{
-    terminal::Terminal,
-    primitives::Cell,
-};
 
 #[derive(Clone,Copy,Default,Debug)]
-pub enum ReadMode {
+pub enum RenderPosition {
     #[default]
     Bottom,
     Floating(usize),
 }
 
-pub struct TerminalReader {
+pub struct TerminalRenderer {
     cells: Vec<Cell>,
-    mode: ReadMode,
     size: Vector2<usize>,
+    position: RenderPosition,
     last_known_total_rows: usize,
 }
 
-impl Default for TerminalReader {
+impl Default for TerminalRenderer {
     fn default() -> Self {
         Self {
             cells: Vec::new(),
-            mode: ReadMode::Bottom,
             size: Vector2::new(0,0),
+            position: RenderPosition::Bottom,
             last_known_total_rows: 0,
         }
     }
 }
 
-impl TerminalReader {
-    pub fn set_size(&mut self, size: Vector2<usize>) {
-        let total_cells = size.x*size.y;
-        self.size = size;
-        self.cells.resize(total_cells, Cell::default());
-    }
-
+impl TerminalRenderer {
     pub fn get_size(&self) -> Vector2<usize> {
         self.size
     }
@@ -44,19 +36,23 @@ impl TerminalReader {
         self.cells.as_slice()
     }
 
-    pub fn read_terminal(&mut self, terminal: &Terminal) {
-        let viewport = terminal.get_viewport();
+    pub(crate) fn set_size(&mut self, size: Vector2<usize>) {
+        let total_cells = size.x*size.y;
+        self.size = size;
+        self.cells.resize(total_cells, Cell::default());
+    }
+
+    pub(crate) fn render_viewport(&mut self, viewport: &Viewport) {
         let scrollback_buffer = viewport.get_scrollback_buffer();
         let scrollback_buffer_lines = scrollback_buffer.get_lines();
         let size = viewport.get_size();
-
-        self.set_size(size); 
+        self.set_size(size);
         self.last_known_total_rows = scrollback_buffer_lines.len();
-        let scrollback_row = match self.mode {
-            ReadMode::Bottom => scrollback_buffer_lines.len(),
-            ReadMode::Floating(row) => {
+        let scrollback_row = match self.position {
+            RenderPosition::Bottom => scrollback_buffer_lines.len(),
+            RenderPosition::Floating(row) => {
                 if row >= scrollback_buffer_lines.len() {
-                    self.mode = ReadMode::Bottom;
+                    self.position = RenderPosition::Bottom;
                     scrollback_buffer_lines.len()
                 } else {
                     row
@@ -105,41 +101,41 @@ impl TerminalReader {
     }
 
     pub fn scroll_up(&mut self, total: usize) {
-        let mode = match self.mode {
-            ReadMode::Bottom => {
+        let position = match self.position {
+            RenderPosition::Bottom => {
                 let new_row = self.last_known_total_rows.saturating_sub(total);
-                ReadMode::Floating(new_row)
+                RenderPosition::Floating(new_row)
             },
-            ReadMode::Floating(row) => {
+            RenderPosition::Floating(row) => {
                 let new_row = row.saturating_sub(total);
-                ReadMode::Floating(new_row)
+                RenderPosition::Floating(new_row)
             },
         };
-        self.mode = mode;
+        self.position = position;
     }
 
     pub fn scroll_down(&mut self, total: usize) {
-        let mode = match self.mode {
-            ReadMode::Bottom => {
-                ReadMode::Bottom
+        let position = match self.position {
+            RenderPosition::Bottom => {
+                RenderPosition::Bottom
             },
-            ReadMode::Floating(row) => {
+            RenderPosition::Floating(row) => {
                 let new_row = row + total;
                 if new_row >= self.last_known_total_rows {
-                    ReadMode::Bottom
+                    RenderPosition::Bottom
                 } else {
-                    ReadMode::Floating(new_row)
+                    RenderPosition::Floating(new_row)
                 }
             },
         };
-        self.mode = mode;
+        self.position = position;
     }
 
     pub fn scroll_to_top(&mut self) {
-        self.mode = ReadMode::Floating(0);
+        self.position = RenderPosition::Floating(0);
     }
 
     pub fn scroll_to_bottom(&mut self) {
-        self.mode = ReadMode::Bottom;
+        self.position = RenderPosition::Bottom;
     }
 }

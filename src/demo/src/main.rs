@@ -1,17 +1,9 @@
 use clap::Parser;
-use terminal::{
-    terminal::Terminal, 
-    parser::Parser as TerminalParser,
-};
-use std::io::Read;
-use std::ops::DerefMut;
-use std::sync::{Arc,Mutex};
-use wgpu_terminal::{
-    terminal_window::TerminalWindow,
-    terminal_target::TerminalTarget,
-};
-#[cfg(windows)]
-use wgpu_terminal::terminal_target::ConptyTarget;
+use cgmath::Vector2;
+use terminal::terminal::Terminal;
+use terminal_process::*;
+use std::io::Write;
+use wgpu_terminal::terminal_window::TerminalWindow;
 
 #[derive(Clone,Copy,Debug,Default,clap::ValueEnum)]
 enum Mode {
@@ -40,6 +32,9 @@ struct Args {
     /// Mode
     #[arg(value_enum, long, default_value_t = Mode::default())]
     mode: Mode,
+    /// Headless
+    #[arg(long, default_value_t = false)]
+    headless: bool,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -75,25 +70,10 @@ fn start_conpty(args: &Args) -> anyhow::Result<()> {
     command.stdin(std::process::Stdio::piped());
     command.stdout(std::process::Stdio::piped());
     command.stderr(std::process::Stdio::piped());
-    let mut process = conpty::Process::spawn(command)?;
-    let mut pipe_input = process.input()?;
-    let mut pipe_output = process.output()?;
-    let mut conpty_target = ConptyTarget {
-        process: &mut process,
-        pipe_input: &mut pipe_input,
-    };
-    let terminal = Arc::new(Mutex::new(Terminal::default()));
-    let pipe_output_thread = std::thread::spawn({
-        let terminal = terminal.clone();
-        let args = args.clone();
-        move || {
-            start_reader_thread(args, terminal, &mut pipe_output);
-        }
-    });
-    start_render_thread(args.clone(), terminal.clone(), &mut conpty_target)?;
-    process.exit(0)?;
-    drop(process);
-    let _ = pipe_output_thread.join();
+    let process = conpty::Process::spawn(command)?;
+    let process = Box::new(ConptyProcess::new(process));
+    let terminal = Terminal::new(process);
+    start_terminal(args.clone(), terminal)?;
     Ok(())
 }
 
@@ -103,57 +83,22 @@ fn start_raw_shell(args: &Args) -> anyhow::Result<()> {
     command.stdin(std::process::Stdio::piped());
     command.stdout(std::process::Stdio::piped());
     command.stderr(std::process::Stdio::null());
-    let mut process = command.spawn()?;
-    let mut pipe_input = process.stdin.take().ok_or("Failed to get pipe.stdin").map_err(anyhow::Error::msg)?;
-    let mut pipe_output = process.stdout.take().ok_or("Failed to get pipe.stdout").map_err(anyhow::Error::msg)?;
-    let terminal = Arc::new(Mutex::new(Terminal::default()));
-    let pipe_output_thread = std::thread::spawn({
-        let terminal = terminal.clone();
-        let args = args.clone();
-        move || {
-            start_reader_thread(args, terminal, &mut pipe_output);
-        }
-    });
-    start_render_thread(args.clone(), terminal.clone(), &mut pipe_input)?;
-    process.kill()?;
-    drop(process);
-    let _ = pipe_output_thread.join();
+    let process = command.spawn()?;
+    let process = Box::new(RawProcess::new(process));
+    let terminal = Terminal::new(process);
+    start_terminal(args.clone(), terminal)?;
     Ok(())
 }
 
-fn start_reader_thread(_args: Args, terminal: Arc<Mutex<Terminal>>, pipe_output: &mut impl Read) {
-    const BLOCK_SIZE: usize = 8192;
-    let mut parser = TerminalParser::default();
-    let mut buffer = vec![0u8; BLOCK_SIZE];
-    loop {
-        match pipe_output.read(buffer.as_mut_slice()) {
-            Ok(0) => {
-                log::info!("Closing child.stdout after reading 0 bytes");
-                break;
-            },
-            Ok(total_read) => {
-                let data = &buffer[0..total_read];
-                match terminal.lock() {
-                    Ok(ref mut terminal) => parser.parse_bytes(data, terminal.deref_mut()),
-                    Err(err) => {
-                        log::error!("Error while acquiring terminal: {:?}", err);
-                        break;
-                    },
-                }
-            }, 
-            Err(err) => {
-                log::error!("Error while reading child.stdout: {:?}", err);
-                break;
-            },
-        };
+fn start_terminal(args: Args, terminal: Terminal) -> anyhow::Result<()> {
+    if args.headless {
+        start_headless(args, terminal)
+    } else {
+        start_render_thread(args, terminal)
     }
 }
 
-fn start_render_thread(
-    args: Args,
-    terminal: Arc<Mutex<Terminal>>, 
-    terminal_target: &mut impl TerminalTarget,
-) -> anyhow::Result<()> {
+fn start_render_thread(args: Args, terminal: Terminal) -> anyhow::Result<()> {
     let event_loop = winit::event_loop::EventLoop::new()?;
     let window = winit::window::WindowBuilder::new().build(&event_loop)?;
     let mut window_size = window.inner_size();
@@ -162,11 +107,33 @@ fn start_render_thread(
     let mut terminal_window = pollster::block_on(TerminalWindow::new(
         &window,
         terminal,
-        terminal_target,
         args.font_filename.to_owned(), args.font_size,
     ))?;
     event_loop.run(move |event, target| {
         terminal_window.on_winit_event(event, target);
     })?;
+    Ok(())
+}
+
+fn start_headless(_args: Args, mut terminal: Terminal) -> anyhow::Result<()> {
+    terminal.set_size(Vector2::new(100,32));
+    terminal.wait();
+    if !terminal.try_render() {
+        log::error!("Failed to render terminal after closing");
+    }
+    let renderer = terminal.get_renderer();
+    let size = renderer.get_size();
+    let cells = renderer.get_cells();
+    let mut tmp_buf = [0u8; 4];
+    let mut stdout = std::io::stdout();
+    for y in 0..size.y {
+        let index = y*size.x;
+        let row = &cells[index..(index+size.x)];
+        for cell in row {
+            let data = cell.character.encode_utf8(&mut tmp_buf);
+            let _ = stdout.write(data.as_bytes());
+        }
+        let _ = stdout.write(b"\n");
+    }
     Ok(())
 }

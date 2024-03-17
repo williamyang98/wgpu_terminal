@@ -10,3 +10,6 @@ vt100 = { version = "0.0.1", path = "../vt100" }
 log = { workspace = true }
 bitflags = { version = "2.4.2" }
 circular_buffer = { version = "0.0.1", path = "../circular_buffer" }
+
+[dev-dependencies]
+test-log = "0.2.15"

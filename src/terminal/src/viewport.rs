@@ -97,8 +97,10 @@ impl Viewport {
     }
 
     pub fn set_cursor(&mut self, cursor: Vector2<usize>) {
+        // cursor can overflow the screen apparently without moving to new line
+        // newline only occurs when a change is committed at the overflowing location onto the next line
         let cursor = Vector2::new(
-            cursor.x.min(self.size.x-1),
+            cursor.x.min(self.size.x),
             cursor.y.min(self.size.y-1),
         );
         self.cursor = cursor;

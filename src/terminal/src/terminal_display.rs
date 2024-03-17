@@ -270,47 +270,29 @@ impl TerminalParserHandler for TerminalDisplay {
                 },
             },
             Vt100Command::ReplaceWithSpaces(total) => {
-                let size = self.viewport.get_size();
                 let cursor = self.viewport.get_cursor();
                 let (line, _) = self.viewport.get_row_mut(cursor.y);
-                let end_index = (cursor.x+total.get() as usize).min(size.x);
-                for c in &mut line[cursor.x..end_index] {
-                    c.character = ' ';
-                }
+                let region = &mut line[cursor.x..];
+                let total = (total.get() as usize).min(region.len());
+                region[..total].iter_mut().for_each(|c| c.character = ' ');
             },
             Vt100Command::InsertSpaces(total) => {
                 let cursor = self.viewport.get_cursor();
-                let (line, _) = self.viewport.get_row_mut(cursor.y);
-                let line = &mut line[cursor.x..];
-                let total = total.get() as usize;
-                let width = line.len();
-                let total = total.min(width);
-                let shift = width-total;
-                for i in (0..shift).rev() {
-                    let dst_i = i+total;
-                    let src_i = i;
-                    line[dst_i] = line[src_i];
-                }
-                for i in 0..total {
-                    line[i] = Cell::default();
-                }
+                let (line, status) = self.viewport.get_row_mut(cursor.y);
+                let region = &mut line[cursor.x..];
+                let total = (total.get() as usize).min(region.len());
+                let shift = region.len()-total;
+                region.copy_within(0..shift, total);
+                region[..total].iter_mut().for_each(|c| c.character = ' ');
+                status.length = (status.length+total).min(line.len());
             },
             Vt100Command::DeleteCharacters(total) => {
                 let cursor = self.viewport.get_cursor();
-                let (line, _) = self.viewport.get_row_mut(cursor.y);
-                let line = &mut line[cursor.x..];
-                let total = total.get() as usize;
-                let width = line.len();
-                let total = total.min(width);
-                let shift = width-total;
-                for i in 0..shift {
-                    let dst_i = i;
-                    let src_i = i+total;
-                    line[dst_i] = line[src_i];
-                }
-                for i in 0..total {
-                    line[i+shift] = Cell::default();
-                }
+                let (line, status) = self.viewport.get_row_mut(cursor.y);
+                let region = &mut line[(cursor.x+1)..];
+                let total = (total.get() as usize).min(region.len());
+                region.copy_within(total.., 0);
+                status.length = status.length.saturating_sub(total);
             },
             Vt100Command::InsertLines(total) => {
                 self.viewport.insert_lines(total.get() as usize); 

@@ -6,7 +6,7 @@ use std::string::FromUtf8Error;
 use crate::{
     command::Command,
     graphic_style::{GraphicStyle,Rgb8},
-    misc::{EraseMode,Vector2,ScrollRegion,CharacterSet,InputMode,KeyType,WindowAction},
+    misc::{EraseMode,Vector2,ScrollRegion,CharacterSet,InputMode,KeyType,WindowAction,CursorStyle,BellVolume},
     screen_mode::{ScreenMode},
 };
 
@@ -21,6 +21,9 @@ pub enum ParserError {
     InvalidGraphicStyle(u16),
     InvalidUtf8String(FromUtf8Error),
     InvalidKeyType(u16),
+    InvalidCursorStyle(u16),
+    InvalidWarningBellVolume(u16),
+    InvalidMarginBellVolume(u16),
 }
 
 pub trait ParserHandler {
@@ -34,6 +37,7 @@ enum ParserContext {
     EntryPoint,                         // ESC
     ControlSequenceIntroducer,          // ESC [
     ControlSequenceIntroducerNumbers,   // ESC [ <n>
+    ControlSequenceIntroducerSpace,     // ESC [ <n> <space>
     CommonPrivateMode,                  // ESC [ ?
     Exclamation,                        // ESC [ !
     ScreenMode,                         // ESC [ =
@@ -125,6 +129,7 @@ impl Parser {
                     ParserContext::EntryPoint => self.read_entry_point(b,h),
                     ParserContext::ControlSequenceIntroducer => self.read_control_sequence_introducer(b,h),
                     ParserContext::ControlSequenceIntroducerNumbers => self.read_control_sequence_introducer_numbers(b,h),
+                    ParserContext::ControlSequenceIntroducerSpace => self.read_control_sequence_introducer_space(b,h),
                     ParserContext::CommonPrivateMode => self.read_common_private_mode(b,h),
                     ParserContext::Exclamation => self.read_exclamation(b,h),
                     ParserContext::ScreenMode => self.read_screen_mode(b,h),
@@ -243,6 +248,71 @@ impl Parser {
                 _ => self.on_error(h, ParserError::Unhandled),
             },
             b't' => self.read_window_action(h),
+            b' ' => {
+                self.context = ParserContext::ControlSequenceIntroducerSpace;
+                self.state = ParserState::Characters;
+            },
+            _ => self.on_error(h, ParserError::Unhandled),
+        }
+    }
+
+    fn read_control_sequence_introducer_space(&mut self, b: u8, h: &mut impl ParserHandler) {
+        // @mark: ESC [ <n> <space>
+        match b {
+            b'@' => {
+                let n = self.numbers.first().copied().unwrap_or(1).max(1);
+                self.on_success(h, Command::ShiftLeftByColumns(n));
+            },
+            b'A' => {
+                let n = self.numbers.first().copied().unwrap_or(1).max(1);
+                self.on_success(h, Command::ShiftRightByColumns(n));
+            },
+            b'q' => match self.numbers.first().copied().unwrap_or(1) {
+                0 | 1 => {
+                    self.on_success(h, Command::SetCursorBlinking(true));
+                    self.on_success(h, Command::SetCursorStyle(CursorStyle::Block));
+                },
+                2 => {
+                    self.on_success(h, Command::SetCursorBlinking(false));
+                    self.on_success(h, Command::SetCursorStyle(CursorStyle::Block));
+                },
+                3 => {
+                    self.on_success(h, Command::SetCursorBlinking(true));
+                    self.on_success(h, Command::SetCursorStyle(CursorStyle::Underline));
+                },
+                4 => {
+                    self.on_success(h, Command::SetCursorBlinking(false));
+                    self.on_success(h, Command::SetCursorStyle(CursorStyle::Underline));
+                },
+                5 => {
+                    self.on_success(h, Command::SetCursorBlinking(true));
+                    self.on_success(h, Command::SetCursorStyle(CursorStyle::Bar));
+                },
+                6 => {
+                    self.on_success(h, Command::SetCursorBlinking(false));
+                    self.on_success(h, Command::SetCursorStyle(CursorStyle::Bar));
+                },
+                n => self.on_error(h, ParserError::InvalidCursorStyle(n)),
+            },
+            b't' => match self.try_get_numbers(1).map(|v| v[0]) {
+                Err(err) => self.on_error(h, err),
+                Ok(v) => match v {
+                    0..=1 => self.on_success(h, Command::SetWarningBellVolume(BellVolume::Off)),
+                    2..=4 => self.on_success(h, Command::SetWarningBellVolume(BellVolume::Low)),
+                    5..=8 => self.on_success(h, Command::SetWarningBellVolume(BellVolume::High)),
+                    _ => self.on_error(h, ParserError::InvalidWarningBellVolume(v)),
+                },
+            },
+            b'u' => match self.try_get_numbers(1).map(|v| v[0]) {
+                Err(err) => self.on_error(h, err),
+                Ok(v) => match v {
+                    0 => self.on_success(h, Command::SetMarginBellVolume(BellVolume::High)),
+                    1 => self.on_success(h, Command::SetMarginBellVolume(BellVolume::Off)),
+                    2..=4 => self.on_success(h, Command::SetMarginBellVolume(BellVolume::Low)),
+                    5..=8 => self.on_success(h, Command::SetMarginBellVolume(BellVolume::High)),
+                    _ => self.on_error(h, ParserError::InvalidMarginBellVolume(v)),
+                },
+            },
             _ => self.on_error(h, ParserError::Unhandled),
         }
     }

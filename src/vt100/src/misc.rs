@@ -111,3 +111,17 @@ pub enum WindowAction {
     RestoreWindowTitle(Option<u16>),
     ResizeWindowHeight(u16),
 }
+
+#[derive(Clone,Copy,Debug,PartialEq,Eq)]
+pub enum CursorStyle {
+    Block,
+    Underline,
+    Bar,
+}
+
+#[derive(Clone,Copy,Debug,PartialEq,Eq)]
+pub enum BellVolume {
+    Off,
+    Low,
+    High,
+}

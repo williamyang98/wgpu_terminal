@@ -10,7 +10,7 @@ mod tests {
     use crate::{
         command::Command,
         parser::{Parser,ParserHandler,ParserError},
-        misc::{Vector2,EraseMode,ScrollRegion,CharacterSet,InputMode,KeyType,WindowAction},
+        misc::{Vector2,EraseMode,ScrollRegion,CharacterSet,InputMode,KeyType,WindowAction,CursorStyle,BellVolume},
         screen_mode::ScreenMode,
         graphic_style::{GraphicStyle,Rgb8},
     };
@@ -537,6 +537,50 @@ mod tests {
                 test_valid_sequence(format!("[8;{};{}t",x,y).as_bytes(), &[Command::WindowAction(WindowAction::ResizeTextArea(pos))]);
             }
         }
+    }
+
+    #[test]
+    fn valid_cursor_style() {
+        test_valid_sequence(b"[0 q", &[Command::SetCursorBlinking(true), Command::SetCursorStyle(CursorStyle::Block)]);
+        test_valid_sequence(b"[1 q", &[Command::SetCursorBlinking(true), Command::SetCursorStyle(CursorStyle::Block)]);
+        test_valid_sequence(b"[2 q", &[Command::SetCursorBlinking(false), Command::SetCursorStyle(CursorStyle::Block)]);
+        test_valid_sequence(b"[3 q", &[Command::SetCursorBlinking(true), Command::SetCursorStyle(CursorStyle::Underline)]);
+        test_valid_sequence(b"[4 q", &[Command::SetCursorBlinking(false), Command::SetCursorStyle(CursorStyle::Underline)]);
+        test_valid_sequence(b"[5 q", &[Command::SetCursorBlinking(true), Command::SetCursorStyle(CursorStyle::Bar)]);
+        test_valid_sequence(b"[6 q", &[Command::SetCursorBlinking(false), Command::SetCursorStyle(CursorStyle::Bar)]);
+    }
+
+    #[test]
+    fn valid_column_shift() {
+        let values = generate_sample_values();
+        for &v in values.iter() {
+            let n = v.clamp(1, MAX_VALUE);
+            test_valid_sequence(format!("[{} @", v).as_bytes(), &[Command::ShiftLeftByColumns(n)]);
+            test_valid_sequence(format!("[{} A", v).as_bytes(), &[Command::ShiftRightByColumns(n)]);
+        }
+    }
+
+    #[test]
+    fn valid_set_bell_volume() {
+        test_valid_sequence(b"[0 t", &[Command::SetWarningBellVolume(BellVolume::Off)]);
+        test_valid_sequence(b"[1 t", &[Command::SetWarningBellVolume(BellVolume::Off)]);
+        test_valid_sequence(b"[2 t", &[Command::SetWarningBellVolume(BellVolume::Low)]);
+        test_valid_sequence(b"[3 t", &[Command::SetWarningBellVolume(BellVolume::Low)]);
+        test_valid_sequence(b"[4 t", &[Command::SetWarningBellVolume(BellVolume::Low)]);
+        test_valid_sequence(b"[5 t", &[Command::SetWarningBellVolume(BellVolume::High)]);
+        test_valid_sequence(b"[6 t", &[Command::SetWarningBellVolume(BellVolume::High)]);
+        test_valid_sequence(b"[7 t", &[Command::SetWarningBellVolume(BellVolume::High)]);
+        test_valid_sequence(b"[8 t", &[Command::SetWarningBellVolume(BellVolume::High)]);
+
+        test_valid_sequence(b"[0 u", &[Command::SetMarginBellVolume(BellVolume::High)]);
+        test_valid_sequence(b"[1 u", &[Command::SetMarginBellVolume(BellVolume::Off)]);
+        test_valid_sequence(b"[2 u", &[Command::SetMarginBellVolume(BellVolume::Low)]);
+        test_valid_sequence(b"[3 u", &[Command::SetMarginBellVolume(BellVolume::Low)]);
+        test_valid_sequence(b"[4 u", &[Command::SetMarginBellVolume(BellVolume::Low)]);
+        test_valid_sequence(b"[5 u", &[Command::SetMarginBellVolume(BellVolume::High)]);
+        test_valid_sequence(b"[6 u", &[Command::SetMarginBellVolume(BellVolume::High)]);
+        test_valid_sequence(b"[7 u", &[Command::SetMarginBellVolume(BellVolume::High)]);
+        test_valid_sequence(b"[8 u", &[Command::SetMarginBellVolume(BellVolume::High)]);
     }
 
     #[test]

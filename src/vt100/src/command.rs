@@ -1,5 +1,5 @@
 use crate::{
-    misc::{Vector2,EraseMode,ScrollRegion,CharacterSet,InputMode,KeyType,WindowAction},
+    misc::{Vector2,EraseMode,ScrollRegion,CharacterSet,InputMode,KeyType,WindowAction,CursorStyle,BellVolume},
     graphic_style::{GraphicStyle,Rgb8},
     screen_mode::{ScreenMode},
 };
@@ -79,6 +79,12 @@ pub enum Command {
     ResetScreenMode(ScreenMode),
     // window
     WindowAction(WindowAction),
+    // ESC [ <n> <space>
+    ShiftLeftByColumns(u16),
+    ShiftRightByColumns(u16),
+    SetCursorStyle(CursorStyle),
+    SetWarningBellVolume(BellVolume),
+    SetMarginBellVolume(BellVolume),
     // modifier keys
     SetKeyModifierOption(KeyType, Option<u16>),
     // soft reset

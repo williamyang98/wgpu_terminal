@@ -4,10 +4,9 @@ use crate::utf8_parser::{
 };
 use vt100::parser::{
     Parser as Vt100Parser, 
-    ParserError as Vt100ParserError,
+    ParserHandler as Vt100ParserHandler,
     VT100_ESCAPE_CODE,
 };
-use vt100::command::Command as Vt100Command;
 
 enum State {
     Byte,
@@ -36,12 +35,12 @@ pub trait TerminalParserHandler {
     fn on_ascii_data(&mut self, buf: &[u8]);
     fn on_utf8(&mut self, character: char);
     fn on_utf8_error(&mut self, error: &Utf8ParserError);
-    fn on_vt100(&mut self, character: &Vt100Command);
-    fn on_vt100_error(&mut self, error: &Vt100ParserError, parser: &Vt100Parser);
 }
 
 impl TerminalParser {
-    pub fn parse_bytes(&mut self, mut buf: &[u8], handler: &mut impl TerminalParserHandler) {
+    pub fn parse_bytes<T>(&mut self, mut buf: &[u8], handler: &mut T) 
+    where T: TerminalParserHandler + Vt100ParserHandler
+    {
         while !buf.is_empty() {
             match self.state {
                 State::Byte => {
@@ -95,18 +94,10 @@ impl TerminalParser {
                     let mut total_read = 0;
                     for &b in buf {
                         total_read += 1;
-                        match self.vt100_parser.feed_byte(b) {
-                            Err(Vt100ParserError::Pending) => {},
-                            Err(ref err) => {
-                                handler.on_vt100_error(err, &self.vt100_parser);
-                                self.state = State::Byte;
-                                break;
-                            },
-                            Ok(ref command) => {
-                                handler.on_vt100(command);
-                                self.state = State::Byte;
-                                break;
-                            },
+                        self.vt100_parser.feed_byte(b, handler);
+                        if self.vt100_parser.is_terminated() {
+                            self.state = State::Byte;
+                            break;
                         }
                     }
                     buf = &buf[total_read..];

@@ -10,6 +10,7 @@ use vt100::{
     parser::{
         Parser as Vt100Parser, 
         ParserError as Vt100ParserError,
+        ParserHandler as Vt100ParserHandler,
     },
     command::Command as Vt100Command,
     misc::EraseMode,
@@ -80,70 +81,68 @@ impl TerminalDisplay {
         &mut self.viewport
     }
 
-    fn set_graphic_styles(&mut self, styles: &[GraphicStyle]) {
+    fn set_graphic_style(&mut self, style: GraphicStyle) {
         let pen = self.viewport.get_pen_mut();
-        for &style in styles {
-            match style {
-                GraphicStyle::ResetAll => {
-                    *pen = self.default_pen;
-                },
-                // flags
-                GraphicStyle::EnableBold => { pen.style_flags |= StyleFlags::Bold; },
-                GraphicStyle::EnableDim => { pen.style_flags |= StyleFlags::Dim; },
-                GraphicStyle::EnableItalic => { pen.style_flags |= StyleFlags::Italic; },
-                GraphicStyle::EnableUnderline => { pen.style_flags |= StyleFlags::Underline; },
-                GraphicStyle::EnableBlinking => { pen.style_flags |= StyleFlags::Blinking; },
-                GraphicStyle::EnableInverse => { pen.style_flags |= StyleFlags::Inverse; },
-                GraphicStyle::EnableHidden => { pen.style_flags |= StyleFlags::Hidden; },
-                GraphicStyle::EnableStrikethrough => { pen.style_flags |= StyleFlags::Strikethrough; },
-                GraphicStyle::DisableWeight => { pen.style_flags &= !(StyleFlags::Bold | StyleFlags::Dim); },
-                GraphicStyle::DisableItalic => { pen.style_flags &= !StyleFlags::Italic; },
-                GraphicStyle::DisableUnderline => { pen.style_flags &= !StyleFlags::Underline; },
-                GraphicStyle::DisableBlinking => { pen.style_flags &= !StyleFlags::Blinking; },
-                GraphicStyle::DisableInverse => { pen.style_flags &= !StyleFlags::Inverse; },
-                GraphicStyle::DisableHidden => { pen.style_flags &= !StyleFlags::Hidden; },
-                GraphicStyle::DisableStrikethrough => { pen.style_flags &= !StyleFlags::Strikethrough; },
-                // foreground colours
-                GraphicStyle::ForegroundBlack => { pen.foreground_colour = self.colour_table[0]; },
-                GraphicStyle::ForegroundRed => { pen.foreground_colour = self.colour_table[1]; },
-                GraphicStyle::ForegroundGreen => { pen.foreground_colour = self.colour_table[2]; },
-                GraphicStyle::ForegroundYellow => { pen.foreground_colour = self.colour_table[3]; },
-                GraphicStyle::ForegroundBlue => { pen.foreground_colour = self.colour_table[4]; },
-                GraphicStyle::ForegroundMagenta => { pen.foreground_colour = self.colour_table[5]; },
-                GraphicStyle::ForegroundCyan => { pen.foreground_colour = self.colour_table[6]; },
-                GraphicStyle::ForegroundWhite => { pen.foreground_colour = self.colour_table[7]; },
-                GraphicStyle::ForegroundExtended => { log::info!("[vt100] GraphicStyle({:?})", style); },
-                GraphicStyle::ForegroundDefault => { pen.foreground_colour = self.default_pen.foreground_colour; },
-                // background colours
-                GraphicStyle::BackgroundBlack => { pen.background_colour = self.colour_table[0]; },
-                GraphicStyle::BackgroundRed => { pen.background_colour = self.colour_table[1]; },
-                GraphicStyle::BackgroundGreen => { pen.background_colour = self.colour_table[2]; },
-                GraphicStyle::BackgroundYellow => { pen.background_colour = self.colour_table[3]; },
-                GraphicStyle::BackgroundBlue => { pen.background_colour = self.colour_table[4]; },
-                GraphicStyle::BackgroundMagenta => { pen.background_colour = self.colour_table[5]; },
-                GraphicStyle::BackgroundCyan => { pen.background_colour = self.colour_table[6]; },
-                GraphicStyle::BackgroundWhite => { pen.background_colour = self.colour_table[7]; },
-                GraphicStyle::BackgroundExtended => { log::info!("[vt100] GraphicStyle({:?})", style); },
-                GraphicStyle::BackgroundDefault => { pen.background_colour = self.default_pen.background_colour; },
-                // bright foreground colours
-                GraphicStyle::BrightForegroundBlack => { pen.foreground_colour = self.colour_table[0]; },
-                GraphicStyle::BrightForegroundRed => { pen.foreground_colour = self.colour_table[1]; },
-                GraphicStyle::BrightForegroundGreen => { pen.foreground_colour = self.colour_table[2]; },
-                GraphicStyle::BrightForegroundYellow => { pen.foreground_colour = self.colour_table[3]; },
-                GraphicStyle::BrightForegroundBlue => { pen.foreground_colour = self.colour_table[4]; },
-                GraphicStyle::BrightForegroundMagenta => { pen.foreground_colour = self.colour_table[5]; },
-                GraphicStyle::BrightForegroundCyan => { pen.foreground_colour = self.colour_table[6]; },
-                GraphicStyle::BrightForegroundWhite => { pen.foreground_colour = self.colour_table[7]; },
-                // bright background colours
-                GraphicStyle::BrightBackgroundBlack => { pen.background_colour = self.colour_table[0]; },
-                GraphicStyle::BrightBackgroundRed => { pen.background_colour = self.colour_table[1]; },
-                GraphicStyle::BrightBackgroundGreen => { pen.background_colour = self.colour_table[2]; },
-                GraphicStyle::BrightBackgroundYellow => { pen.background_colour = self.colour_table[3]; },
-                GraphicStyle::BrightBackgroundBlue => { pen.background_colour = self.colour_table[4]; },
-                GraphicStyle::BrightBackgroundMagenta => { pen.background_colour = self.colour_table[5]; },
-                GraphicStyle::BrightBackgroundCyan => { pen.background_colour = self.colour_table[6]; },
-                GraphicStyle::BrightBackgroundWhite => { pen.background_colour = self.colour_table[7]; },
-            }
+        match style {
+            GraphicStyle::ResetAll => {
+                *pen = self.default_pen;
+            },
+            // flags
+            GraphicStyle::EnableBold => { pen.style_flags |= StyleFlags::Bold; },
+            GraphicStyle::EnableDim => { pen.style_flags |= StyleFlags::Dim; },
+            GraphicStyle::EnableItalic => { pen.style_flags |= StyleFlags::Italic; },
+            GraphicStyle::EnableUnderline => { pen.style_flags |= StyleFlags::Underline; },
+            GraphicStyle::EnableBlinking => { pen.style_flags |= StyleFlags::Blinking; },
+            GraphicStyle::EnableInverse => { pen.style_flags |= StyleFlags::Inverse; },
+            GraphicStyle::EnableHidden => { pen.style_flags |= StyleFlags::Hidden; },
+            GraphicStyle::EnableStrikethrough => { pen.style_flags |= StyleFlags::Strikethrough; },
+            GraphicStyle::DisableWeight => { pen.style_flags &= !(StyleFlags::Bold | StyleFlags::Dim); },
+            GraphicStyle::DisableItalic => { pen.style_flags &= !StyleFlags::Italic; },
+            GraphicStyle::DisableUnderline => { pen.style_flags &= !StyleFlags::Underline; },
+            GraphicStyle::DisableBlinking => { pen.style_flags &= !StyleFlags::Blinking; },
+            GraphicStyle::DisableInverse => { pen.style_flags &= !StyleFlags::Inverse; },
+            GraphicStyle::DisableHidden => { pen.style_flags &= !StyleFlags::Hidden; },
+            GraphicStyle::DisableStrikethrough => { pen.style_flags &= !StyleFlags::Strikethrough; },
+            // foreground colours
+            GraphicStyle::ForegroundBlack => { pen.foreground_colour = self.colour_table[0]; },
+            GraphicStyle::ForegroundRed => { pen.foreground_colour = self.colour_table[1]; },
+            GraphicStyle::ForegroundGreen => { pen.foreground_colour = self.colour_table[2]; },
+            GraphicStyle::ForegroundYellow => { pen.foreground_colour = self.colour_table[3]; },
+            GraphicStyle::ForegroundBlue => { pen.foreground_colour = self.colour_table[4]; },
+            GraphicStyle::ForegroundMagenta => { pen.foreground_colour = self.colour_table[5]; },
+            GraphicStyle::ForegroundCyan => { pen.foreground_colour = self.colour_table[6]; },
+            GraphicStyle::ForegroundWhite => { pen.foreground_colour = self.colour_table[7]; },
+            GraphicStyle::ForegroundExtended => { log::info!("[vt100] GraphicStyle({:?})", style); },
+            GraphicStyle::ForegroundDefault => { pen.foreground_colour = self.default_pen.foreground_colour; },
+            // background colours
+            GraphicStyle::BackgroundBlack => { pen.background_colour = self.colour_table[0]; },
+            GraphicStyle::BackgroundRed => { pen.background_colour = self.colour_table[1]; },
+            GraphicStyle::BackgroundGreen => { pen.background_colour = self.colour_table[2]; },
+            GraphicStyle::BackgroundYellow => { pen.background_colour = self.colour_table[3]; },
+            GraphicStyle::BackgroundBlue => { pen.background_colour = self.colour_table[4]; },
+            GraphicStyle::BackgroundMagenta => { pen.background_colour = self.colour_table[5]; },
+            GraphicStyle::BackgroundCyan => { pen.background_colour = self.colour_table[6]; },
+            GraphicStyle::BackgroundWhite => { pen.background_colour = self.colour_table[7]; },
+            GraphicStyle::BackgroundExtended => { log::info!("[vt100] GraphicStyle({:?})", style); },
+            GraphicStyle::BackgroundDefault => { pen.background_colour = self.default_pen.background_colour; },
+            // bright foreground colours
+            GraphicStyle::BrightForegroundBlack => { pen.foreground_colour = self.colour_table[0]; },
+            GraphicStyle::BrightForegroundRed => { pen.foreground_colour = self.colour_table[1]; },
+            GraphicStyle::BrightForegroundGreen => { pen.foreground_colour = self.colour_table[2]; },
+            GraphicStyle::BrightForegroundYellow => { pen.foreground_colour = self.colour_table[3]; },
+            GraphicStyle::BrightForegroundBlue => { pen.foreground_colour = self.colour_table[4]; },
+            GraphicStyle::BrightForegroundMagenta => { pen.foreground_colour = self.colour_table[5]; },
+            GraphicStyle::BrightForegroundCyan => { pen.foreground_colour = self.colour_table[6]; },
+            GraphicStyle::BrightForegroundWhite => { pen.foreground_colour = self.colour_table[7]; },
+            // bright background colours
+            GraphicStyle::BrightBackgroundBlack => { pen.background_colour = self.colour_table[0]; },
+            GraphicStyle::BrightBackgroundRed => { pen.background_colour = self.colour_table[1]; },
+            GraphicStyle::BrightBackgroundGreen => { pen.background_colour = self.colour_table[2]; },
+            GraphicStyle::BrightBackgroundYellow => { pen.background_colour = self.colour_table[3]; },
+            GraphicStyle::BrightBackgroundBlue => { pen.background_colour = self.colour_table[4]; },
+            GraphicStyle::BrightBackgroundMagenta => { pen.background_colour = self.colour_table[5]; },
+            GraphicStyle::BrightBackgroundCyan => { pen.background_colour = self.colour_table[6]; },
+            GraphicStyle::BrightBackgroundWhite => { pen.background_colour = self.colour_table[7]; },
         }
     }
 }
@@ -166,42 +165,36 @@ impl TerminalParserHandler for TerminalDisplay {
     fn on_utf8_error(&mut self, error: &Utf8ParserError) {
         log::error!("[utf8-error] {:?}", error);
     }
+}
 
-    fn on_vt100(&mut self, c: &Vt100Command) {
+impl Vt100ParserHandler for TerminalDisplay {
+    fn on_command(&mut self, c: Vt100Command) {
         match c {
-            Vt100Command::SetWindowTitle(data) => match std::str::from_utf8(data) {
-                Ok(title) => log::info!("[vt100] SetWindowTitleUtf8('{}')", title),
-                Err(_err) => log::info!("[vt100] SetWindowTitleBytes({:?})", data),
+            Vt100Command::SetWindowTitle(title) => {
+                log::info!("[vt100] SetWindowTitle({})", title);
             },
-            Vt100Command::SetHyperlink { tag, link } => {
-                let tag_res = std::str::from_utf8(tag);
-                let link_res = std::str::from_utf8(link);
-                match (tag_res, link_res) {
-                    (Ok(tag), Ok(link)) => log::info!("[vt100] SetHyperlink(tag: '{}', link: '{}')", tag, link), 
-                    (Err(_), Ok(link)) => log::info!("[vt100] SetHyperlink(tag: '{:?}', link: '{}')", tag, link), 
-                    (Ok(tag), Err(_)) => log::info!("[vt100] SetHyperlink(tag: '{}', link: '{:?}')", tag, link), 
-                    (Err(_), Err(_)) => log::info!("[vt100] SetHyperlink(tag: '{:?}', link: '{:?}')", tag, link), 
-                }
+            Vt100Command::SetHyperlink(link) => {
+                log::info!("[vt100] SetHyperlink({})", link); 
             },
             // set pen colour
-            Vt100Command::SetGraphicStyles(styles) => {
-                self.set_graphic_styles(styles);
+            Vt100Command::SetGraphicStyle(style) => {
+                self.set_graphic_style(style);
             },
-            Vt100Command::SetBackgroundColourRgb(ref rgb) => {
+            Vt100Command::SetBackgroundColourRgb(rgb) => {
                 let pen = self.viewport.get_pen_mut();
-                pen.background_colour = *rgb;
+                pen.background_colour = rgb;
             },
-            Vt100Command::SetForegroundColourRgb(ref rgb) => {
+            Vt100Command::SetForegroundColourRgb(rgb) => {
                 let pen = self.viewport.get_pen_mut();
-                pen.foreground_colour = *rgb;
+                pen.foreground_colour = rgb;
             },
             Vt100Command::SetBackgroundColourTable(index) => {
                 let pen = self.viewport.get_pen_mut();
-                pen.background_colour = self.colour_table[*index as usize];
+                pen.background_colour = self.colour_table[index as usize];
             },
             Vt100Command::SetForegroundColourTable(index) => {
                 let pen = self.viewport.get_pen_mut();
-                pen.foreground_colour = self.colour_table[*index as usize];
+                pen.foreground_colour = self.colour_table[index as usize];
             },
             // erase data
             Vt100Command::EraseInDisplay(mode) => match mode {
@@ -273,14 +266,14 @@ impl TerminalParserHandler for TerminalDisplay {
                 let cursor = self.viewport.get_cursor();
                 let (line, _) = self.viewport.get_row_mut(cursor.y);
                 let region = &mut line[cursor.x..];
-                let total = (total.get() as usize).min(region.len());
+                let total = (total as usize).min(region.len());
                 region[..total].iter_mut().for_each(|c| c.character = ' ');
             },
             Vt100Command::InsertSpaces(total) => {
                 let cursor = self.viewport.get_cursor();
                 let (line, status) = self.viewport.get_row_mut(cursor.y);
                 let region = &mut line[cursor.x..];
-                let total = (total.get() as usize).min(region.len());
+                let total = (total as usize).min(region.len());
                 let shift = region.len()-total;
                 region.copy_within(0..shift, total);
                 region[..total].iter_mut().for_each(|c| c.character = ' ');
@@ -290,77 +283,78 @@ impl TerminalParserHandler for TerminalDisplay {
                 let cursor = self.viewport.get_cursor();
                 let (line, status) = self.viewport.get_row_mut(cursor.y);
                 let region = &mut line[(cursor.x+1)..];
-                let total = (total.get() as usize).min(region.len());
+                let total = (total as usize).min(region.len());
                 region.copy_within(total.., 0);
                 status.length = status.length.saturating_sub(total);
             },
             Vt100Command::InsertLines(total) => {
-                self.viewport.insert_lines(total.get() as usize); 
+                self.viewport.insert_lines(total as usize); 
             },
             Vt100Command::DeleteLines(total) => {
-                self.viewport.delete_lines(total.get() as usize); 
+                self.viewport.delete_lines(total as usize); 
             },
             // cursor movement
-            Vt100Command::MoveCursorPositionViewport(ref pos) => {
+            Vt100Command::MoveCursorPositionViewport(pos) => {
                 // top left corner is (1,1)
-                let pos = Vector2::new((pos.x.get()-1) as usize, (pos.y.get()-1) as usize);
-                self.viewport.set_cursor(pos);
+                let x = pos.x.saturating_sub(1) as usize;
+                let y = pos.y.saturating_sub(1) as usize;
+                self.viewport.set_cursor(Vector2::new(x,y));
             },
             Vt100Command::MoveCursorUp(total) => {
                 let mut cursor = self.viewport.get_cursor();
-                let total = total.get() as usize;
-                cursor.y = cursor.y.max(total) - total;
+                let total = total as usize;
+                cursor.y = cursor.y.saturating_sub(total);
                 self.viewport.set_cursor(cursor);
             },
             Vt100Command::MoveCursorDown(total) => {
                 let mut cursor = self.viewport.get_cursor();
-                cursor.y += total.get() as usize;
+                cursor.y += total as usize;
                 self.viewport.set_cursor(cursor);
             },
             Vt100Command::MoveCursorRight(total) => {
                 let mut cursor = self.viewport.get_cursor();
-                cursor.x += total.get() as usize;
+                cursor.x += total as usize;
                 self.viewport.set_cursor(cursor);
             },
             Vt100Command::MoveCursorLeft(total) => {
                 let mut cursor = self.viewport.get_cursor();
-                let total = total.get() as usize;
-                cursor.x = cursor.x.max(total) - total;
+                let total = total as usize;
+                cursor.x = cursor.x.saturating_sub(total);
                 self.viewport.set_cursor(cursor);
             },
             Vt100Command::MoveCursorReverseIndex => {
                 let mut cursor = self.viewport.get_cursor();
-                cursor.y = cursor.y.max(1) - 1;
+                cursor.y = cursor.y.saturating_sub(1);
                 self.viewport.set_cursor(cursor);
             },
             Vt100Command::MoveCursorNextLine(total) => {
                 let mut cursor = self.viewport.get_cursor();
-                cursor.y = total.get() as usize - 1;
+                cursor.y = total.saturating_sub(1) as usize;
                 self.viewport.set_cursor(cursor);
             },
             Vt100Command::MoveCursorPreviousLine(total) => {
                 let mut cursor = self.viewport.get_cursor();
-                cursor.y = total.get() as usize - 1;
+                cursor.y = total.saturating_sub(1) as usize;
                 self.viewport.set_cursor(cursor);
             },
             Vt100Command::MoveCursorHorizontalAbsolute(total) => {
                 let mut cursor = self.viewport.get_cursor();
-                cursor.x = total.get() as usize - 1;
+                cursor.x = total.saturating_sub(1) as usize;
                 self.viewport.set_cursor(cursor);
             },
             Vt100Command::MoveCursorVerticalAbsolute(total) => {
                 let mut cursor = self.viewport.get_cursor();
-                cursor.y = total.get() as usize - 1;
+                cursor.y = total.saturating_sub(1) as usize;
                 self.viewport.set_cursor(cursor);
             },
             // viewport positioning
             Vt100Command::ScrollUp(total) => {
-                for _ in 0..total.get() {
+                for _ in 0..total {
                     self.viewport.scroll_up();
                 }
             },
             Vt100Command::ScrollDown(total) => {
-                for _ in 0..total.get() {
+                for _ in 0..total {
                     self.viewport.scroll_down();
                 }
             },
@@ -377,10 +371,10 @@ impl TerminalParserHandler for TerminalDisplay {
             },
             // cursor status
             Vt100Command::SetCursorBlinking(is_blink) => {
-                self.cursor_status.is_blinking = *is_blink;
+                self.cursor_status.is_blinking = is_blink;
             },
             Vt100Command::SetCursorVisible(is_visible) => {
-                self.cursor_status.is_visible = *is_visible;
+                self.cursor_status.is_visible = is_visible;
             },
             _ => {
                 log::info!("[vt100] Unhandled: {:?}", c);
@@ -388,7 +382,8 @@ impl TerminalParserHandler for TerminalDisplay {
         }
     }
 
-    fn on_vt100_error(&mut self, err: &Vt100ParserError, parser: &Vt100Parser) {
+    fn on_error(&mut self, err: Vt100ParserError, parser: &Vt100Parser) {
         log::error!("[vt100-error] {:?} {:?}", err, parser);
     }
 }
+

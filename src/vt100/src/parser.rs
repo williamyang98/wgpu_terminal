@@ -1,7 +1,7 @@
 // Sources: https://github.com/0x5c/VT100-Examples/blob/master/vt_seq.md
 //          https://gist.github.com/fnky/458719343aabd01cfb17a3a4f7296797
-use std::num::NonZeroU16;
 use std::fmt;
+use std::string::FromUtf8Error;
 use crate::{
     command::Command,
     graphic_style::{GraphicStyle,Rgb8},
@@ -11,14 +11,19 @@ use crate::{
 
 pub const VT100_ESCAPE_CODE: u8 = 0x1B;
 
-#[derive(Clone,Copy,Debug,PartialEq)]
+#[derive(Clone,Debug,PartialEq)]
 pub enum ParserError {
-    Pending,
     Unhandled,
-    MissingNumbers { given: usize, expected: usize }, // given, required
+    MissingNumbers { given: usize, expected: usize },
     InvalidEraseMode(u16),
     InvalidScreenMode(u16),
-    NoValidGraphicStyles,
+    InvalidGraphicStyle(u16),
+    InvalidUtf8String(FromUtf8Error),
+}
+
+pub trait ParserHandler {
+    fn on_command(&mut self, command: Command);
+    fn on_error(&mut self, error: ParserError, parser: &Parser);
 }
 
 #[derive(Clone,Copy,Debug,Default,PartialEq)]
@@ -39,6 +44,7 @@ enum ParserState {
     #[default]
     Characters,
     Numbers,
+    Terminated,
 }
 
 #[derive(Clone,Copy,Default,Debug,PartialEq)]
@@ -70,7 +76,6 @@ pub struct Parser {
     numbers: Vec<u16>,
     numbers_last_index: Option<usize>,
     number_slice: Option<NumberSlice>,
-    graphic_styles: Vec<GraphicStyle>,
     osc_terminator: OperatingSystemCommandTerminator,
 }
 
@@ -85,7 +90,6 @@ impl Default for Parser {
             numbers: Vec::with_capacity(MAX_EXPECTED_NUMBERS),
             numbers_last_index: None,
             number_slice: None,
-            graphic_styles: Vec::with_capacity(MAX_EXPECTED_NUMBERS),
             osc_terminator: OperatingSystemCommandTerminator::default(),
         }
     }
@@ -99,205 +103,210 @@ impl Parser {
         self.numbers.clear();
         self.numbers_last_index  = None;
         self.number_slice = None;
-        self.graphic_styles.clear();
         self.osc_terminator = OperatingSystemCommandTerminator::default();
     }
 
-    pub fn feed_byte(&mut self, b: u8) -> Result<Command, ParserError> {
+    pub fn feed_byte(&mut self, b: u8, h: &mut impl ParserHandler) {
         self.buffer.push(b);
-        self.parse_byte(b)
+        self.parse_byte(b,h);
     }
 
-    fn parse_byte(&mut self, b: u8) -> Result<Command, ParserError> {
+    pub fn is_terminated(&self) -> bool {
+        self.state == ParserState::Terminated
+    }
+
+    fn parse_byte(&mut self, b: u8, h: &mut impl ParserHandler) {
         match self.state {
             ParserState::Characters => {
                 match self.context {
-                    ParserContext::EntryPoint => self.read_entry_point(b),
-                    ParserContext::ControlSequenceIntroducer => self.read_control_sequence_introducer(b),
-                    ParserContext::ControlSequenceIntroducerNumbers => self.read_control_sequence_introducer_numbers(b),
-                    ParserContext::CommonPrivateMode => self.read_common_private_mode(b),
-                    ParserContext::Exclamation => self.read_exclamation(b),
-                    ParserContext::ScreenMode => self.read_screen_mode(b),
-                    ParserContext::Designate => self.read_designate(b),
-                    ParserContext::OperatingSystemCommand => self.read_operating_system_command(b),
+                    ParserContext::EntryPoint => self.read_entry_point(b,h),
+                    ParserContext::ControlSequenceIntroducer => self.read_control_sequence_introducer(b,h),
+                    ParserContext::ControlSequenceIntroducerNumbers => self.read_control_sequence_introducer_numbers(b,h),
+                    ParserContext::CommonPrivateMode => self.read_common_private_mode(b,h),
+                    ParserContext::Exclamation => self.read_exclamation(b,h),
+                    ParserContext::ScreenMode => self.read_screen_mode(b,h),
+                    ParserContext::Designate => self.read_designate(b,h),
+                    ParserContext::OperatingSystemCommand => self.read_operating_system_command(b,h),
                 }
             },
-            ParserState::Numbers => self.read_numbers(b),
+            ParserState::Numbers => self.read_numbers(b,h),
+            ParserState::Terminated => panic!("Cannot use a terminated parser until it has been reset"),
         }
     }
 
-    fn read_entry_point(&mut self, b: u8) -> Result<Command, ParserError> {
+    fn read_entry_point(&mut self, b: u8, h: &mut impl ParserHandler) {
         // @mark: ESC
-        let n_default = NonZeroU16::new(1).unwrap();
         match b {
-            b'A' => Ok(Command::MoveCursorUp(n_default)),
-            b'B' => Ok(Command::MoveCursorDown(n_default)),
-            b'C' => Ok(Command::MoveCursorRight(n_default)),
-            b'D' => Ok(Command::MoveCursorLeft(n_default)),
-            b'E' => Ok(Command::MoveCursorReverseIndex),
-            b'7' => Ok(Command::SaveCursorToMemory),
-            b'8' => Ok(Command::RestoreCursorFromMemory),
-            b'=' => Ok(Command::SetKeypadMode(InputMode::Application)),
-            b'>' => Ok(Command::SetKeypadMode(InputMode::Numeric)),
-            b'H' => Ok(Command::SetTabStopAtCurrentColumn),
-            b'M' => Ok(Command::MoveCursorUp(n_default)),
-            b'[' => {
-                self.context = ParserContext::ControlSequenceIntroducer;
-                Err(ParserError::Pending)
+            b'A' => self.on_success(h, Command::MoveCursorUp(1)),
+            b'B' => self.on_success(h, Command::MoveCursorDown(1)),
+            b'C' => self.on_success(h, Command::MoveCursorRight(1)),
+            b'D' => self.on_success(h, Command::MoveCursorLeft(1)),
+            b'E' => self.on_success(h, Command::MoveCursorReverseIndex),
+            b'7' => self.on_success(h, Command::SaveCursorToMemory),
+            b'8' => self.on_success(h, Command::RestoreCursorFromMemory),
+            b'=' => self.on_success(h, Command::SetKeypadMode(InputMode::Application)),
+            b'>' => self.on_success(h, Command::SetKeypadMode(InputMode::Numeric)),
+            b'H' => self.on_success(h, Command::SetTabStopAtCurrentColumn),
+            b'M' => self.on_success(h, Command::MoveCursorUp(1)),
+            b'[' => { 
+                self.context = ParserContext::ControlSequenceIntroducer; 
+                self.state = ParserState::Characters; 
             },
-            b'(' => {
-                self.context = ParserContext::Designate;
-                Err(ParserError::Pending)
+            b'(' => { 
+                self.context = ParserContext::Designate; 
+                self.state = ParserState::Characters; 
             },
             b']' => {
                 self.context = ParserContext::OperatingSystemCommand;
                 self.state = ParserState::Numbers; 
-                Err(ParserError::Pending)
             },
-            _ => Err(ParserError::Unhandled),
+            _ => self.on_error(h, ParserError::Unhandled),
         }
     }
 
-    fn read_control_sequence_introducer(&mut self, b: u8) -> Result<Command, ParserError> {
+    fn read_control_sequence_introducer(&mut self, b: u8, h: &mut impl ParserHandler) {
         // @mark: ESC [
         match b {
-            b's' => Ok(Command::SaveCursorToMemory),
-            b'u' => Ok(Command::RestoreCursorFromMemory),
+            b's' => self.on_success(h, Command::SaveCursorToMemory),
+            b'u' => self.on_success(h, Command::RestoreCursorFromMemory),
             b'?' => {
                 self.context = ParserContext::CommonPrivateMode;
                 self.state = ParserState::Numbers; 
-                Err(ParserError::Pending)
             },
             b'!' => {
                 self.context = ParserContext::Exclamation;
-                Err(ParserError::Pending)
+                self.state = ParserState::Characters; 
             },
             b'=' => {
                 self.context = ParserContext::ScreenMode;
                 self.state = ParserState::Numbers;
-                Err(ParserError::Pending)
             },
             _ => {
                 self.context = ParserContext::ControlSequenceIntroducerNumbers;
                 self.state = ParserState::Numbers; 
-                self.parse_byte(b) // forward this byte to csi numbers branch
+                self.parse_byte(b,h);
             },
         }
     }
 
-    fn read_control_sequence_introducer_numbers(&mut self, b: u8) -> Result<Command, ParserError> {
+    fn read_control_sequence_introducer_numbers(&mut self, b: u8, h: &mut impl ParserHandler) {
         // @mark: ESC [ <n>
         match b {
-            b'A' => Ok(Command::MoveCursorUp(self.read_optional_nonzero_u16())),
-            b'B' => Ok(Command::MoveCursorDown(self.read_optional_nonzero_u16())),
-            b'C' => Ok(Command::MoveCursorRight(self.read_optional_nonzero_u16())),
-            b'D' => Ok(Command::MoveCursorLeft(self.read_optional_nonzero_u16())),
-            b'E' => Ok(Command::MoveCursorNextLine(self.read_optional_nonzero_u16())),
-            b'F' => Ok(Command::MoveCursorPreviousLine(self.read_optional_nonzero_u16())),
-            b'G' => Ok(Command::MoveCursorHorizontalAbsolute(self.read_optional_nonzero_u16())),
-            b'd' => Ok(Command::MoveCursorVerticalAbsolute(self.read_optional_nonzero_u16())),
-            b'S' => Ok(Command::ScrollUp(self.read_optional_nonzero_u16())),
-            b'T' => Ok(Command::ScrollDown(self.read_optional_nonzero_u16())),
-            b'@' => Ok(Command::InsertSpaces(self.read_optional_nonzero_u16())),
-            b'P' => Ok(Command::DeleteCharacters(self.read_optional_nonzero_u16())),
-            b'X' => Ok(Command::ReplaceWithSpaces(self.read_optional_nonzero_u16())),
-            b'L' => Ok(Command::InsertLines(self.read_optional_nonzero_u16())),
-            b'M' => Ok(Command::DeleteLines(self.read_optional_nonzero_u16())),
-            b'J' => Ok(Command::EraseInDisplay(self.try_read_erase_mode()?)),
-            b'K' => Ok(Command::EraseInLine(self.try_read_erase_mode()?)),
-            b'H' => match self.try_read_xy() {
-                Ok(pos) => Ok(Command::MoveCursorPositionViewport(pos)),
-                Err(_) => {
-                    let pos = NonZeroU16::new(1).unwrap();
-                    let pos = Vector2::new(pos,pos);
-                    Ok(Command::MoveCursorPositionViewport(pos))
-                },
+            b'A' => self.on_success(h, Command::MoveCursorUp(self.read_optional_nonzero_u16())),
+            b'B' => self.on_success(h, Command::MoveCursorDown(self.read_optional_nonzero_u16())),
+            b'C' => self.on_success(h, Command::MoveCursorRight(self.read_optional_nonzero_u16())),
+            b'D' => self.on_success(h, Command::MoveCursorLeft(self.read_optional_nonzero_u16())),
+            b'E' => self.on_success(h, Command::MoveCursorNextLine(self.read_optional_nonzero_u16())),
+            b'F' => self.on_success(h, Command::MoveCursorPreviousLine(self.read_optional_nonzero_u16())),
+            b'G' => self.on_success(h, Command::MoveCursorHorizontalAbsolute(self.read_optional_nonzero_u16())),
+            b'd' => self.on_success(h, Command::MoveCursorVerticalAbsolute(self.read_optional_nonzero_u16())),
+            b'S' => self.on_success(h, Command::ScrollUp(self.read_optional_nonzero_u16())),
+            b'T' => self.on_success(h, Command::ScrollDown(self.read_optional_nonzero_u16())),
+            b'@' => self.on_success(h, Command::InsertSpaces(self.read_optional_nonzero_u16())),
+            b'P' => self.on_success(h, Command::DeleteCharacters(self.read_optional_nonzero_u16())),
+            b'X' => self.on_success(h, Command::ReplaceWithSpaces(self.read_optional_nonzero_u16())),
+            b'L' => self.on_success(h, Command::InsertLines(self.read_optional_nonzero_u16())),
+            b'M' => self.on_success(h, Command::DeleteLines(self.read_optional_nonzero_u16())),
+            b'J' => self.on_result(h, self.try_read_erase_mode().map(Command::EraseInDisplay)),
+            b'K' => self.on_result(h, self.try_read_erase_mode().map(Command::EraseInLine)),
+            b'H' => {
+                let pos = self.try_read_xy().unwrap_or(Vector2::new(1,1));
+                self.on_success(h, Command::MoveCursorPositionViewport(pos));
             },
-            b'f' => Ok(Command::MoveCursorPositionViewport(self.try_read_xy()?)),
-            b'm' => Ok(self.try_read_graphics_command()?),
-            b'r' => Ok(Command::SetScrollRegion(self.read_scrolling_region())),
-            b'I' => Ok(Command::AdvanceCursorToTabStop(self.read_optional_nonzero_u16())),
-            b'Z' => Ok(Command::ReverseCursorToTabStop(self.read_optional_nonzero_u16())),
-            b'g' => match self.try_get_numbers(1)?.first().unwrap() {
-                0 => Ok(Command::ClearCurrentTabStop),
-                3 => Ok(Command::ClearAllTabStops),
-                _ => Err(ParserError::Unhandled),
+            b'f' => self.on_result(h, self.try_read_xy().map(Command::MoveCursorPositionViewport)),
+            b'm' => self.read_graphics_command(h),
+            b'r' => self.on_success(h, Command::SetScrollRegion(self.read_scrolling_region())),
+            b'I' => self.on_success(h, Command::AdvanceCursorToTabStop(self.read_optional_nonzero_u16())),
+            b'Z' => self.on_success(h, Command::ReverseCursorToTabStop(self.read_optional_nonzero_u16())),
+            b'g' => match self.try_get_numbers(1).map(|v| v[0]) {
+                Err(err) => self.on_error(h, err),
+                Ok(0) => self.on_success(h, Command::ClearCurrentTabStop),
+                Ok(3) => self.on_success(h, Command::ClearAllTabStops),
+                _ => self.on_error(h, ParserError::Unhandled),
             },
-            b'n' => match self.try_get_numbers(1)?.first().unwrap() {
-                6 => Ok(Command::QueryCursorPosition),
-                _ => Err(ParserError::Unhandled),
+            b'n' => match self.try_get_numbers(1).map(|v| v[0]) {
+                Err(err) => self.on_error(h, err),
+                Ok(6) => self.on_success(h, Command::QueryCursorPosition),
+                _ => self.on_error(h, ParserError::Unhandled),
             },
-            b'c' => match self.try_get_numbers(1)?.first().unwrap() {
-                0 => Ok(Command::QueryTerminalIdentity),
-                _ => Err(ParserError::Unhandled),
+            b'c' => match self.try_get_numbers(1).map(|v| v[0]) {
+                Err(err) => self.on_error(h, err),
+                Ok(0) => self.on_success(h, Command::QueryTerminalIdentity),
+                _ => self.on_error(h, ParserError::Unhandled),
             },
-            _ => Err(ParserError::Unhandled)
+            _ => self.on_error(h, ParserError::Unhandled),
         }
     }
 
-    fn read_common_private_mode(&self, b: u8) -> Result<Command, ParserError> {
+    fn read_common_private_mode(&mut self, b: u8, h: &mut impl ParserHandler) {
         // @mark: ESC [ ? <n>
-        let n = self.try_get_numbers(1)?;
-        let n = n[0];
-        match (n, b) {
-            (   1, b'h') => Ok(Command::SetCursorKeysMode(InputMode::Application)),
-            (   1, b'l') => Ok(Command::SetCursorKeysMode(InputMode::Numeric)),
-            (   3, b'h') => Ok(Command::SetConsoleWidth(NonZeroU16::new(132).unwrap())),
-            (   3, b'l') => Ok(Command::SetConsoleWidth(NonZeroU16::new(80).unwrap())),
-            (  12, b'h') => Ok(Command::SetCursorBlinking(true)),
-            (  12, b'l') => Ok(Command::SetCursorBlinking(false)),
-            (  25, b'h') => Ok(Command::SetCursorVisible(true)),
-            (  25, b'l') => Ok(Command::SetCursorVisible(false)),
-            (  47, b'h') => Ok(Command::SaveScreen),
-            (  47, b'l') => Ok(Command::RestoreScreen),
-            (1049, b'h') => Ok(Command::SetAlternateBuffer(true)),
-            (1049, b'l') => Ok(Command::SetAlternateBuffer(false)),
-            (2004, b'h') => Ok(Command::SetBracketedPasteMode(true)),
-            (2004, b'l') => Ok(Command::SetBracketedPasteMode(false)),
-            _ => Err(ParserError::Unhandled),
+        let total_numbers = self.numbers.len();
+        for i in 0..total_numbers {
+            let n = self.numbers[i];
+            match (n, b) {
+                (   1, b'h') => self.on_success(h, Command::SetCursorKeysMode(InputMode::Application)),
+                (   1, b'l') => self.on_success(h, Command::SetCursorKeysMode(InputMode::Numeric)),
+                (   3, b'h') => self.on_success(h, Command::SetConsoleWidth(132)),
+                (   3, b'l') => self.on_success(h, Command::SetConsoleWidth(80)),
+                (  12, b'h') => self.on_success(h, Command::SetCursorBlinking(true)),
+                (  12, b'l') => self.on_success(h, Command::SetCursorBlinking(false)),
+                (  25, b'h') => self.on_success(h, Command::SetCursorVisible(true)),
+                (  25, b'l') => self.on_success(h, Command::SetCursorVisible(false)),
+                (  47, b'h') => self.on_success(h, Command::SaveScreen),
+                (  47, b'l') => self.on_success(h, Command::RestoreScreen),
+                (1049, b'h') => self.on_success(h, Command::SetAlternateBuffer(true)),
+                (1049, b'l') => self.on_success(h, Command::SetAlternateBuffer(false)),
+                (2004, b'h') => self.on_success(h, Command::SetBracketedPasteMode(true)),
+                (2004, b'l') => self.on_success(h, Command::SetBracketedPasteMode(false)),
+                _ => self.on_error(h, ParserError::Unhandled),
+            }
         }
     }
 
-    fn read_exclamation(&self, b: u8) -> Result<Command, ParserError> {
+    fn read_exclamation(&mut self, b: u8, h: &mut impl ParserHandler) {
         // @mark: ESC [ !
         match b {
-            b'p' => Ok(Command::SoftReset),
-            _ => Err(ParserError::Unhandled),
+            b'p' => self.on_success(h, Command::SoftReset),
+            _ => self.on_error(h, ParserError::Unhandled),
         }
     }
 
-    fn read_screen_mode(&self, b: u8) -> Result<Command, ParserError> {
+    fn read_screen_mode(&mut self, b: u8, h: &mut impl ParserHandler) {
         // @mark: ESC [ = <n>
         match b {
-            b'h' => match self.try_get_numbers(1)?.first().unwrap() {
-                7 => Ok(Command::SetLineWrapping(true)),
-                n => Ok(Command::SetScreenMode(self.try_read_screen_mode(*n)?)),
+            b'h' => match self.try_get_numbers(1).map(|v| v[0]) {
+                Err(err) => self.on_error(h, err),
+                Ok(7) => self.on_success(h, Command::SetLineWrapping(true)),
+                Ok(n) => self.on_result(h, self.try_read_screen_mode(n).map(Command::SetScreenMode)),
             },
-            b'l' => match self.try_get_numbers(1)?.first().unwrap() {
-                7 => Ok(Command::SetLineWrapping(false)),
-                n => Ok(Command::ResetScreenMode(self.try_read_screen_mode(*n)?)),
+            b'l' => match self.try_get_numbers(1).map(|v| v[0]) {
+                Err(err) => self.on_error(h, err),
+                Ok(7) => self.on_success(h, Command::SetLineWrapping(false)),
+                Ok(n) => self.on_result(h, self.try_read_screen_mode(n).map(Command::ResetScreenMode)),
             },
-            _ => Err(ParserError::Unhandled),
+            _ => self.on_error(h, ParserError::Unhandled),
         }
     }
 
-    fn read_designate(&mut self, b: u8) -> Result<Command, ParserError> {
+    fn read_designate(&mut self, b: u8, h: &mut impl ParserHandler) {
         // @mark: ESC (
         match b {
-            b'0' => Ok(Command::SetCharacterSet(CharacterSet::LineDrawing)),
-            b'B' => Ok(Command::SetCharacterSet(CharacterSet::Ascii)),
-            _ => Err(ParserError::Unhandled),
+            b'0' => self.on_success(h, Command::SetCharacterSet(CharacterSet::LineDrawing)),
+            b'B' => self.on_success(h, Command::SetCharacterSet(CharacterSet::Ascii)),
+            _ => self.on_error(h, ParserError::Unhandled),
         }
     }
 
-    fn read_operating_system_command(&mut self, b: u8) -> Result<Command, ParserError> {
+    fn read_operating_system_command(&mut self, b: u8, h: &mut impl ParserHandler) {
         // @mark: ESC ] <n> <string> <terminator>
         let Some(n) = self.numbers.first() else {
-            return Err(ParserError::Unhandled);
+            self.on_error(h, ParserError::Unhandled);
+            return;
         };
 
         const CHAR_BELL: u8 = 7u8;
         type Terminator = OperatingSystemCommandTerminator;
+        // terminator can be BELL or ESC\
         let is_terminated = match self.osc_terminator {
             Terminator::Bell => {
                 match b {
@@ -309,40 +318,34 @@ impl Parser {
                     _ => false,
                 }
             },
-            Terminator::Backslash => {
-                match b {
-                    b'\\' => true,
-                    _ => false,
-                }
-            },
+            Terminator::Backslash => b == b'\\',
         };
         if !is_terminated {
-            return Err(ParserError::Pending);
+            return;
         }
 
         let total_terminator_bytes = match self.osc_terminator {
             Terminator::Bell => 1,
-            Terminator::Backslash => 2, 
+            Terminator::Backslash => 2,
         };
         let i_start = self.numbers_last_index.unwrap();
         let i_end = self.buffer.len()-total_terminator_bytes;
         let data = &self.buffer[i_start..i_end];
         match n {
-            0 | 2 => Ok(Command::SetWindowTitle(data)),
-            8 => match data.iter().position(|b| b == &b';') {
-                Some(i_delim) => {
-                    let tag = &data[0..i_delim];
-                    let link = &data[(i_delim+1)..];
-                    Ok(Command::SetHyperlink { tag, link })
-                },
-                None => Ok(Command::SetHyperlink { tag: &[], link: data }),
+            0 | 2 => match String::from_utf8(data.to_vec()) {
+                Ok(title) => self.on_success(h, Command::SetWindowTitle(title)),
+                Err(error) => self.on_error(h, ParserError::InvalidUtf8String(error)),
             },
-            _ => Err(ParserError::Unhandled),
+            8 => match String::from_utf8(data.to_vec()) {
+                Ok(title) => self.on_success(h, Command::SetHyperlink(title)),
+                Err(error) => self.on_error(h, ParserError::InvalidUtf8String(error)),
+            },
+            _ => self.on_error(h, ParserError::Unhandled),
         }
     }
  
     // read number list
-    fn read_numbers(&mut self, b: u8) -> Result<Command, ParserError> {
+    fn read_numbers(&mut self, b: u8, h: &mut impl ParserHandler) {
         // @mark: <n>
         if b.is_ascii_digit() {
             let index = self.buffer.len()-1;
@@ -351,7 +354,7 @@ impl Parser {
             } else {
                 self.number_slice = Some(NumberSlice::new(index));
             }
-            return Err(ParserError::Pending);
+            return;
         }
         // determine number
         if let Some(number_slice) = self.number_slice.as_ref() {
@@ -375,21 +378,19 @@ impl Parser {
         self.numbers_last_index = Some(self.buffer.len()-1);
         // @mark: <n> ;
         if b == b';' {
-            Err(ParserError::Pending)
-        } else {
-            self.state = ParserState::Characters;
-            self.parse_byte(b)
+            return;
         }
+        self.state = ParserState::Characters;
+        self.parse_byte(b,h); // try to re-parse as character
     }
 
     // interpret number list
-    fn read_optional_nonzero_u16(&self) -> NonZeroU16 {
+    fn read_optional_nonzero_u16(&self) -> u16 {
         if self.numbers.len() > 1 {
             log::warn!("expected optional number got {} numbers ({:?})", self.numbers.len(), self);
         }
         let n = self.numbers.first().copied();
-        let n = n.unwrap_or(1).max(1);
-        NonZeroU16::new(n).unwrap()
+        n.unwrap_or(1).max(1)
     }
 
     fn try_read_erase_mode(&self) -> Result<EraseMode, ParserError> {
@@ -400,84 +401,62 @@ impl Parser {
         }
     }
 
-    fn try_read_xy(&self) -> Result<Vector2<NonZeroU16>, ParserError> {
+    fn try_read_xy(&self) -> Result<Vector2<u16>, ParserError> {
         let n = self.try_get_numbers(2)?;
         let x = n[1].max(1);
         let y = n[0].max(1);
-        let x = NonZeroU16::new(x).unwrap();
-        let y = NonZeroU16::new(y).unwrap();
-        Ok(Vector2::new(x, y))
+        Ok(Vector2::new(x,y))
     }
 
-    fn try_read_graphics_command(&mut self) -> Result<Command, ParserError> {
-        let header = (
-            self.numbers.first().to_owned(), 
-            self.numbers.get(1).to_owned(),
-            self.numbers.len(),
-        );
-        match header {
-            (Some(38), Some(5), 3..) => {
-                // 8bit colours
-                // @mark: ESC [ 38 ; 5 ; <ID> m
-                let id = self.numbers[2].min(255) as u8;
-                return Ok(Command::SetForegroundColourTable(id));
+    fn read_graphics_command(&mut self, h: &mut impl ParserHandler) {
+        match self.numbers.as_slice() {
+            [38,5,id,..] => return self.on_success(h, Command::SetForegroundColourTable((*id).min(255) as u8)),
+            [48,5,id,..] => return self.on_success(h, Command::SetBackgroundColourTable((*id).min(255) as u8)),
+            [38,2,r,g,b,..] => {
+                let rgb = Rgb8 {
+                    r: (*r).min(255) as u8,
+                    g: (*g).min(255) as u8,
+                    b: (*b).min(255) as u8,
+                };
+                return self.on_success(h, Command::SetForegroundColourRgb(rgb));
             },
-            (Some(48), Some(5), 3..) => {
-                // 8bit colours
-                // @mark: ESC [ 48 ; 5 ; <ID> m
-                let id = self.numbers[2].min(255) as u8;
-                return Ok(Command::SetBackgroundColourTable(id));
-            },
-            (Some(38), Some(2), 5..) => {
-                // RGB colours
-                // @mark: ESC [ 38 ; 2 ; <r> ; <g> ; <b> m
-                let r = self.numbers[2].min(255) as u8;
-                let g = self.numbers[3].min(255) as u8;
-                let b = self.numbers[4].min(255) as u8;
-                return Ok(Command::SetForegroundColourRgb(Rgb8 { r, g, b }));
-            },
-            (Some(48), Some(2), 5..) => {
-                // RGB colours
-                // @mark: ESC [ 48 ; 2 ; <r> ; <g> ; <b> m
-                let r = self.numbers[2].min(255) as u8;
-                let g = self.numbers[3].min(255) as u8;
-                let b = self.numbers[4].min(255) as u8;
-                return Ok(Command::SetBackgroundColourRgb(Rgb8 { r, g, b }));
+            [48,2,r,g,b,..] => {
+                let rgb = Rgb8 {
+                    r: (*r).min(255) as u8,
+                    g: (*g).min(255) as u8,
+                    b: (*b).min(255) as u8,
+                };
+                return self.on_success(h, Command::SetBackgroundColourRgb(rgb));
             },
             _ => {},
         }
  
-        // @mark: ESC [ <n> m
-        self.graphic_styles.clear();
         if self.numbers.is_empty() {
-            self.graphic_styles.push(GraphicStyle::ResetAll);
-        } else {
-            for n in &self.numbers {
-                if let Some(g) = GraphicStyle::try_from_u16(*n) {
-                    self.graphic_styles.push(g);
-                } else {
-                    log::warn!("Unknown graphics style {}", n);
-                }
+            return self.on_success(h, Command::SetGraphicStyle(GraphicStyle::ResetAll));
+        }
+ 
+        let total_numbers = self.numbers.len();
+        for i in 0..total_numbers {
+            let n = self.numbers[i];
+            match GraphicStyle::try_from_u16(n) {
+                Some(style) => self.on_success(h, Command::SetGraphicStyle(style)),
+                None => self.on_error(h, ParserError::InvalidGraphicStyle(n)),
             }
         }
-        if self.graphic_styles.is_empty() {
-            return Err(ParserError::NoValidGraphicStyles);
-        }
-        Ok(Command::SetGraphicStyles(self.graphic_styles.as_slice()))
     }
 
     fn read_scrolling_region(&self) -> Option<ScrollRegion> {
-        match (self.numbers.first(), self.numbers.get(1)) {
-            (Some(top), Some(bottom)) => Some(ScrollRegion::new(*top, *bottom)),
+        match self.numbers.as_slice() {
+            [top, bottom, ..] => Some(ScrollRegion::new(*top, *bottom)),
             _ => None,
         }
     }
 
     fn try_read_screen_mode(&self, n: u16) -> Result<ScreenMode, ParserError> {
-        let Some(mode) = ScreenMode::try_from_u16(n) else {
-            return Err(ParserError::InvalidScreenMode(n));
-        };
-        Ok(mode)
+        match ScreenMode::try_from_u16(n) {
+            Some(mode) => Ok(mode),
+            None => Err(ParserError::InvalidScreenMode(n)),
+        }
     }
 
     fn try_get_numbers(&self, expected: usize) -> Result<&'_ [u16], ParserError> {
@@ -489,6 +468,24 @@ impl Parser {
             log::warn!("expected {} numbers but got {} ({:?})", expected, given, self);
         }
         Ok(&self.numbers[0..expected])
+    }
+
+    fn on_success(&mut self, h: &mut impl ParserHandler, command: Command) {
+        h.on_command(command);
+        self.state = ParserState::Terminated;
+    }
+
+    fn on_error(&mut self, h: &mut impl ParserHandler, error: ParserError) {
+        h.on_error(error, self);
+        self.state = ParserState::Terminated;
+    }
+
+    fn on_result(&mut self, h: &mut impl ParserHandler, result: Result<Command, ParserError>) {
+        match result {
+            Ok(command) => h.on_command(command),
+            Err(error) => h.on_error(error, self),
+        }
+        self.state = ParserState::Terminated;
     }
 }
 
@@ -505,7 +502,6 @@ impl fmt::Debug for Parser {
         res.field("numbers", &self.numbers);
         res.field("number_slice", &self.number_slice);
         res.field("numbers_last_index", &self.numbers_last_index);
-        res.field("graphic_styles", &self.graphic_styles);
         res.field("osc_terminator", &self.osc_terminator);
         res.finish()
     }

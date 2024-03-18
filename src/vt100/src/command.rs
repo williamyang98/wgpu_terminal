@@ -1,5 +1,5 @@
 use crate::{
-    misc::{Vector2,EraseMode,ScrollRegion,CharacterSet,InputMode},
+    misc::{Vector2,EraseMode,ScrollRegion,CharacterSet,InputMode,KeyType,WindowAction},
     graphic_style::{GraphicStyle,Rgb8},
     screen_mode::{ScreenMode},
 };
@@ -41,6 +41,7 @@ pub enum Command {
     // query state
     QueryCursorPosition,
     QueryTerminalIdentity,
+    QueryKeyModifierOption(KeyType),
     // tabs
     SetTabStopAtCurrentColumn,
     AdvanceCursorToTabStop(u16),
@@ -57,18 +58,29 @@ pub enum Command {
     // common private modes
     SetCursorKeysMode(InputMode),
     SetConsoleWidth(u16),
+    SetLightBackground,
+    SetDarkBackground,
     SetCursorBlinking(bool),
     SetCursorVisible(bool),
     SaveScreen,
     RestoreScreen,
+    SetReportMouseClick(bool),
+    SetHiliteMouseTracking(bool),
+    SetCellMouseTracking(bool),
+    SetAllMouseTracking(bool),
+    SetReportFocus(bool),
+    SetUtf8MouseMode(bool),
+    SetSelectiveGraphicRenditionMouseMode(bool),
     SetAlternateBuffer(bool),
     SetBracketedPasteMode(bool),
-
-    // alternate screen buffer
+    // screen mode
     SetLineWrapping(bool),
     SetScreenMode(ScreenMode),
     ResetScreenMode(ScreenMode),
-    // window width
+    // window
+    WindowAction(WindowAction),
+    // modifier keys
+    SetKeyModifierOption(KeyType, Option<u16>),
     // soft reset
     SoftReset,
 }

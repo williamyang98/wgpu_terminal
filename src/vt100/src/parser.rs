@@ -1,11 +1,12 @@
 // Sources: https://github.com/0x5c/VT100-Examples/blob/master/vt_seq.md
 //          https://gist.github.com/fnky/458719343aabd01cfb17a3a4f7296797
+//          https://invisible-island.net/xterm/ctlseqs/ctlseqs.html#h3-Functions-using-CSI-_-ordered-by-the-final-character_s_
 use std::fmt;
 use std::string::FromUtf8Error;
 use crate::{
     command::Command,
     graphic_style::{GraphicStyle,Rgb8},
-    misc::{EraseMode,Vector2,ScrollRegion,CharacterSet,InputMode},
+    misc::{EraseMode,Vector2,ScrollRegion,CharacterSet,InputMode,KeyType,WindowAction},
     screen_mode::{ScreenMode},
 };
 
@@ -19,6 +20,7 @@ pub enum ParserError {
     InvalidScreenMode(u16),
     InvalidGraphicStyle(u16),
     InvalidUtf8String(FromUtf8Error),
+    InvalidKeyType(u16),
 }
 
 pub trait ParserHandler {
@@ -35,6 +37,7 @@ enum ParserContext {
     CommonPrivateMode,                  // ESC [ ?
     Exclamation,                        // ESC [ !
     ScreenMode,                         // ESC [ =
+    KeyModifierOptions,                 // ESC [ >
     Designate,                          // ESC (
     OperatingSystemCommand,             // ESC ]
 }
@@ -125,6 +128,7 @@ impl Parser {
                     ParserContext::CommonPrivateMode => self.read_common_private_mode(b,h),
                     ParserContext::Exclamation => self.read_exclamation(b,h),
                     ParserContext::ScreenMode => self.read_screen_mode(b,h),
+                    ParserContext::KeyModifierOptions => self.read_key_modifier_options(b,h),
                     ParserContext::Designate => self.read_designate(b,h),
                     ParserContext::OperatingSystemCommand => self.read_operating_system_command(b,h),
                 }
@@ -181,6 +185,10 @@ impl Parser {
                 self.context = ParserContext::ScreenMode;
                 self.state = ParserState::Numbers;
             },
+            b'>' => {
+                self.context = ParserContext::KeyModifierOptions;
+                self.state = ParserState::Numbers;
+            },
             _ => {
                 self.context = ParserContext::ControlSequenceIntroducerNumbers;
                 self.state = ParserState::Numbers; 
@@ -234,12 +242,18 @@ impl Parser {
                 Ok(0) => self.on_success(h, Command::QueryTerminalIdentity),
                 _ => self.on_error(h, ParserError::Unhandled),
             },
+            b't' => self.read_window_action(h),
             _ => self.on_error(h, ParserError::Unhandled),
         }
     }
 
     fn read_common_private_mode(&mut self, b: u8, h: &mut impl ParserHandler) {
         // @mark: ESC [ ? <n>
+        if self.numbers.is_empty() {
+            self.on_error(h, ParserError::MissingNumbers { given: 0, expected: 1 });
+            return;
+        }
+
         let total_numbers = self.numbers.len();
         for i in 0..total_numbers {
             let n = self.numbers[i];
@@ -248,16 +262,36 @@ impl Parser {
                 (   1, b'l') => self.on_success(h, Command::SetCursorKeysMode(InputMode::Numeric)),
                 (   3, b'h') => self.on_success(h, Command::SetConsoleWidth(132)),
                 (   3, b'l') => self.on_success(h, Command::SetConsoleWidth(80)),
+                (   5, b'h') => self.on_success(h, Command::SetLightBackground),
+                (   5, b'l') => self.on_success(h, Command::SetDarkBackground),
                 (  12, b'h') => self.on_success(h, Command::SetCursorBlinking(true)),
                 (  12, b'l') => self.on_success(h, Command::SetCursorBlinking(false)),
                 (  25, b'h') => self.on_success(h, Command::SetCursorVisible(true)),
                 (  25, b'l') => self.on_success(h, Command::SetCursorVisible(false)),
                 (  47, b'h') => self.on_success(h, Command::SaveScreen),
                 (  47, b'l') => self.on_success(h, Command::RestoreScreen),
+                (1000, b'h') => self.on_success(h, Command::SetReportMouseClick(true)),
+                (1000, b'l') => self.on_success(h, Command::SetReportMouseClick(false)),
+                (1001, b'h') => self.on_success(h, Command::SetHiliteMouseTracking(true)),
+                (1001, b'l') => self.on_success(h, Command::SetHiliteMouseTracking(false)),
+                (1002, b'h') => self.on_success(h, Command::SetCellMouseTracking(true)),
+                (1002, b'l') => self.on_success(h, Command::SetCellMouseTracking(false)),
+                (1003, b'h') => self.on_success(h, Command::SetAllMouseTracking(true)),
+                (1003, b'l') => self.on_success(h, Command::SetAllMouseTracking(false)),
+                (1004, b'h') => self.on_success(h, Command::SetReportFocus(true)),
+                (1004, b'l') => self.on_success(h, Command::SetReportFocus(false)),
+                (1005, b'h') => self.on_success(h, Command::SetUtf8MouseMode(true)),
+                (1005, b'l') => self.on_success(h, Command::SetUtf8MouseMode(false)),
+                (1006, b'h') => self.on_success(h, Command::SetSelectiveGraphicRenditionMouseMode(true)),
+                (1006, b'l') => self.on_success(h, Command::SetSelectiveGraphicRenditionMouseMode(false)),
                 (1049, b'h') => self.on_success(h, Command::SetAlternateBuffer(true)),
                 (1049, b'l') => self.on_success(h, Command::SetAlternateBuffer(false)),
                 (2004, b'h') => self.on_success(h, Command::SetBracketedPasteMode(true)),
                 (2004, b'l') => self.on_success(h, Command::SetBracketedPasteMode(false)),
+                (   n, b'm') => match KeyType::try_from_u16(n) {
+                    Some(key_type) => self.on_success(h, Command::QueryKeyModifierOption(key_type)),
+                    None => self.on_error(h, ParserError::InvalidKeyType(n)),
+                },
                 _ => self.on_error(h, ParserError::Unhandled),
             }
         }
@@ -283,6 +317,23 @@ impl Parser {
                 Err(err) => self.on_error(h, err),
                 Ok(7) => self.on_success(h, Command::SetLineWrapping(false)),
                 Ok(n) => self.on_result(h, self.try_read_screen_mode(n).map(Command::ResetScreenMode)),
+            },
+            _ => self.on_error(h, ParserError::Unhandled),
+        }
+    }
+
+    fn read_key_modifier_options(&mut self, b: u8, h: &mut impl ParserHandler) {
+        // @mark: ESC [ > <n>
+        match b {
+            b'm' => match self.numbers.first().copied() {
+                Some(n) => match KeyType::try_from_u16(n) {
+                    Some(key_type) => {
+                        let value = self.numbers.get(1).copied();
+                        self.on_success(h, Command::SetKeyModifierOption(key_type, value));
+                    },
+                    None => self.on_error(h, ParserError::InvalidKeyType(n)),
+                },
+                None => self.on_error(h, ParserError::MissingNumbers { given: 0, expected: 1 }),
             },
             _ => self.on_error(h, ParserError::Unhandled),
         }
@@ -409,6 +460,7 @@ impl Parser {
     }
 
     fn read_graphics_command(&mut self, h: &mut impl ParserHandler) {
+        // @mark: ESC [ <n> m
         match self.numbers.as_slice() {
             [38,5,id,..] => return self.on_success(h, Command::SetForegroundColourTable((*id).min(255) as u8)),
             [48,5,id,..] => return self.on_success(h, Command::SetBackgroundColourTable((*id).min(255) as u8)),
@@ -456,6 +508,101 @@ impl Parser {
         match ScreenMode::try_from_u16(n) {
             Some(mode) => Ok(mode),
             None => Err(ParserError::InvalidScreenMode(n)),
+        }
+    }
+
+    fn read_window_action(&mut self, h: &mut impl ParserHandler) {
+        // @mark: ESC [ <n> t
+        let Some(code) = self.numbers.first().copied() else {
+            self.on_error(h, ParserError::MissingNumbers { given: 0, expected: 1 });
+            return;
+        };
+        match code {
+            1 => self.on_success(h, Command::WindowAction(WindowAction::Iconify(false))),
+            2 => self.on_success(h, Command::WindowAction(WindowAction::Iconify(true))),
+            3 => match self.try_get_numbers(3) {
+                Err(err) => self.on_error(h, err),
+                Ok(v) => self.on_success(h, Command::WindowAction(WindowAction::Move(Vector2::new(v[1],v[2])))),
+            },
+            4 => match self.try_get_numbers(3) {
+                Err(err) => self.on_error(h, err),
+                Ok(v) => self.on_success(h, Command::WindowAction(WindowAction::Resize(Vector2::new(v[1],v[2])))),
+            },
+            5 => self.on_success(h, Command::WindowAction(WindowAction::SendToFront)),
+            6 => self.on_success(h, Command::WindowAction(WindowAction::SendToBack)),
+            7 => self.on_success(h, Command::WindowAction(WindowAction::Refresh)),
+            8 => match self.try_get_numbers(3) {
+                Err(err) => self.on_error(h, err),
+                Ok(v) => self.on_success(h, Command::WindowAction(WindowAction::ResizeTextArea(Vector2::new(v[1],v[2])))),
+            },
+            9 => match self.numbers.get(1).copied() {
+                None => self.on_error(h, ParserError::MissingNumbers { given: self.numbers.len(), expected: 2 }),
+                Some(0) => self.on_success(h, Command::WindowAction(WindowAction::RestoreMaximised)),
+                Some(1) => self.on_success(h, Command::WindowAction(WindowAction::Maximise(Vector2::new(true, true)))),
+                Some(2) => self.on_success(h, Command::WindowAction(WindowAction::Maximise(Vector2::new(false, true)))),
+                Some(3) => self.on_success(h, Command::WindowAction(WindowAction::Maximise(Vector2::new(true, false)))),
+                _ => self.on_error(h, ParserError::Unhandled),
+            },
+            10 => match self.numbers.get(1).copied() {
+                None => self.on_error(h, ParserError::MissingNumbers { given: self.numbers.len(), expected: 2 }),
+                Some(0) => self.on_success(h, Command::WindowAction(WindowAction::SetFullscreen(false))),
+                Some(1) => self.on_success(h, Command::WindowAction(WindowAction::SetFullscreen(true))),
+                Some(2) => self.on_success(h, Command::WindowAction(WindowAction::ToggleFullscreen)),
+                _ => self.on_error(h, ParserError::Unhandled),
+            },
+            11 => self.on_success(h, Command::WindowAction(WindowAction::ReportWindowState)),
+            13 => match self.numbers.get(1).copied() {
+                None => self.on_success(h, Command::WindowAction(WindowAction::ReportWindowPosition)),
+                Some(2) => self.on_success(h, Command::WindowAction(WindowAction::ReportTextAreaPosition)),
+                _ => self.on_error(h, ParserError::Unhandled),
+            },
+            14 => match self.numbers.get(1).copied() {
+                None => self.on_success(h, Command::WindowAction(WindowAction::ReportTextAreaSize)),
+                Some(2) => self.on_success(h, Command::WindowAction(WindowAction::ReportWindowSize)),
+                _ => self.on_error(h, ParserError::Unhandled),
+            },
+            15 => self.on_success(h, Command::WindowAction(WindowAction::ReportScreenSize)),
+            16 => self.on_success(h, Command::WindowAction(WindowAction::ReportCellSize)),
+            18 => self.on_success(h, Command::WindowAction(WindowAction::ReportTextAreaGridSize)),
+            19 => self.on_success(h, Command::WindowAction(WindowAction::ReportScreenGridSize)),
+            20 => self.on_success(h, Command::WindowAction(WindowAction::ReportWindowIconLabel)),
+            21 => self.on_success(h, Command::WindowAction(WindowAction::ReportWindowTitle)),
+            22 => match self.numbers.get(1).copied() {
+                None => self.on_error(h, ParserError::MissingNumbers { given: self.numbers.len(), expected: 2 }),
+                Some(0) => {
+                    let stack_index = self.numbers.get(2).copied();
+                    self.on_success(h, Command::WindowAction(WindowAction::SaveIconTitle(stack_index)));
+                    self.on_success(h, Command::WindowAction(WindowAction::SaveWindowTitle(stack_index)));
+                },
+                Some(1) => {
+                    let stack_index = self.numbers.get(2).copied();
+                    self.on_success(h, Command::WindowAction(WindowAction::SaveIconTitle(stack_index)));
+                },
+                Some(2) => {
+                    let stack_index = self.numbers.get(2).copied();
+                    self.on_success(h, Command::WindowAction(WindowAction::SaveWindowTitle(stack_index)));
+                },
+                _ => self.on_error(h, ParserError::Unhandled),
+            },
+            23 => match self.numbers.get(1).copied() {
+                None => self.on_error(h, ParserError::MissingNumbers { given: self.numbers.len(), expected: 2 }),
+                Some(0) => {
+                    let stack_index = self.numbers.get(2).copied();
+                    self.on_success(h, Command::WindowAction(WindowAction::RestoreIconTitle(stack_index)));
+                    self.on_success(h, Command::WindowAction(WindowAction::RestoreWindowTitle(stack_index)));
+                },
+                Some(1) => {
+                    let stack_index = self.numbers.get(2).copied();
+                    self.on_success(h, Command::WindowAction(WindowAction::RestoreIconTitle(stack_index)));
+                },
+                Some(2) => {
+                    let stack_index = self.numbers.get(2).copied();
+                    self.on_success(h, Command::WindowAction(WindowAction::RestoreWindowTitle(stack_index)));
+                },
+                _ => self.on_error(h, ParserError::Unhandled),
+            },
+            24.. => self.on_success(h, Command::WindowAction(WindowAction::ResizeWindowHeight(code))),
+            _ => self.on_error(h, ParserError::Unhandled),
         }
     }
 

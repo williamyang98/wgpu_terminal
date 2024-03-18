@@ -10,10 +10,11 @@ mod tests {
     use crate::{
         command::Command,
         parser::{Parser,ParserHandler,ParserError},
-        misc::{Vector2,EraseMode,ScrollRegion,CharacterSet,InputMode},
+        misc::{Vector2,EraseMode,ScrollRegion,CharacterSet,InputMode,KeyType,WindowAction},
         screen_mode::ScreenMode,
         graphic_style::{GraphicStyle,Rgb8},
     };
+    use std::collections::HashMap;
 
     const MAX_VALUE: u16 = 32767;
 
@@ -55,10 +56,12 @@ mod tests {
                         "[error] Parser ended early at index {}\n  \
                            Sequence: {:?} ({:?})\n  \
                            Expected: {:?}\n  \
+                           Parser: {:?}\n  \
                            Handler: {:?}",
                         i, 
-                        seq, std::str::from_utf8(seq), 
+                        seq, std::str::from_utf8(seq).unwrap_or(""),
                         commands,
+                        parser,
                         handler,
                     );
                 }
@@ -68,10 +71,12 @@ mod tests {
                         "[error] Parser didnt get expected command at index {}\n  \
                            Sequence: {:?} ({:?})\n  \
                            Expected: {:?}\n  \
+                           Parser: {:?}\n  \
                            Handler: {:?}",
                         i, 
-                        seq, std::str::from_utf8(seq), 
+                        seq, std::str::from_utf8(seq).unwrap_or(""),
                         commands,
+                        parser,
                         handler,
                     );
                 }
@@ -91,10 +96,12 @@ mod tests {
                         "[error] Parser didnt get expected error at index {}\n  \
                            Sequence: {:?} ({:?})\n  \
                            Expected: {:?}\n  \
+                           Parser: {:?}\n  \
                            Handler: {:?}",
                         i, 
-                        seq, std::str::from_utf8(seq), 
+                        seq, std::str::from_utf8(seq).unwrap_or(""),
                         errors, 
+                        parser,
                         handler,
                     );
                 }
@@ -104,10 +111,12 @@ mod tests {
                         "[error] Parser ended early at index {}\n  \
                            Sequence: {:?} ({:?})\n  \
                            Expected: {:?}\n  \
+                           Parser: {:?}\n  \
                            Handler: {:?}",
                         i, 
-                        seq, std::str::from_utf8(seq), 
+                        seq, std::str::from_utf8(seq).unwrap_or(""),
                         errors, 
+                        parser,
                         handler,
                     );
                 }
@@ -165,21 +174,99 @@ mod tests {
     }
 
     #[test]
-    fn valid_private_modes_nonstandard() {
+    fn valid_set_input_mode() {
         test_valid_sequence(b"=", &[Command::SetKeypadMode(InputMode::Application)]);
         test_valid_sequence(b">", &[Command::SetKeypadMode(InputMode::Numeric)]);
-        test_valid_sequence(b"[?1h", &[Command::SetCursorKeysMode(InputMode::Application)]);
-        test_valid_sequence(b"[?1l", &[Command::SetCursorKeysMode(InputMode::Numeric)]);
-        test_valid_sequence(b"[?3h", &[Command::SetConsoleWidth(132)]);
-        test_valid_sequence(b"[?3l", &[Command::SetConsoleWidth(80)]);
-        test_valid_sequence(b"[?12h", &[Command::SetCursorBlinking(true)]);
-        test_valid_sequence(b"[?12l", &[Command::SetCursorBlinking(false)]);
-        test_valid_sequence(b"[?25h", &[Command::SetCursorVisible(true)]);
-        test_valid_sequence(b"[?25l", &[Command::SetCursorVisible(false)]);
-        test_valid_sequence(b"[?47h", &[Command::SaveScreen]);
-        test_valid_sequence(b"[?47l", &[Command::RestoreScreen]);
-        test_valid_sequence(b"[?1049h", &[Command::SetAlternateBuffer(true)]);
-        test_valid_sequence(b"[?1049l", &[Command::SetAlternateBuffer(false)]);
+    }
+
+    fn get_private_mode_nonstandard_commands() -> HashMap<(u16,bool), Command> {
+        HashMap::from([
+            ((   1, true) , Command::SetCursorKeysMode(InputMode::Application)),
+            ((   1, false), Command::SetCursorKeysMode(InputMode::Numeric)),
+            ((   3, true) , Command::SetConsoleWidth(132)),
+            ((   3, false), Command::SetConsoleWidth(80)),
+            ((   5, true) , Command::SetLightBackground),
+            ((   5, false), Command::SetDarkBackground),
+            ((  12, true) , Command::SetCursorBlinking(true)),
+            ((  12, false), Command::SetCursorBlinking(false)),
+            ((  25, true) , Command::SetCursorVisible(true)),
+            ((  25, false), Command::SetCursorVisible(false)),
+            ((  47, true) , Command::SaveScreen),
+            ((  47, false), Command::RestoreScreen),
+            ((1000, true) , Command::SetReportMouseClick(true)),
+            ((1000, false), Command::SetReportMouseClick(false)),
+            ((1001, true) , Command::SetHiliteMouseTracking(true)),
+            ((1001, false), Command::SetHiliteMouseTracking(false)),
+            ((1002, true) , Command::SetCellMouseTracking(true)),
+            ((1002, false), Command::SetCellMouseTracking(false)),
+            ((1003, true) , Command::SetAllMouseTracking(true)),
+            ((1003, false), Command::SetAllMouseTracking(false)),
+            ((1004, true) , Command::SetReportFocus(true)),
+            ((1004, false), Command::SetReportFocus(false)),
+            ((1005, true),  Command::SetUtf8MouseMode(true)),
+            ((1005, false), Command::SetUtf8MouseMode(false)),
+            ((1006, true),  Command::SetSelectiveGraphicRenditionMouseMode(true)),
+            ((1006, false), Command::SetSelectiveGraphicRenditionMouseMode(false)),
+            ((1049, true) , Command::SetAlternateBuffer(true)),
+            ((1049, false), Command::SetAlternateBuffer(false)),
+            ((2004, true),  Command::SetBracketedPasteMode(true)),
+            ((2004, false), Command::SetBracketedPasteMode(false)),
+        ])
+    }
+
+    #[test]
+    fn valid_private_modes_nonstandard() {
+        let codes = get_private_mode_nonstandard_commands();
+        for ((mode, is_enable), command) in &codes {
+            let tag = if *is_enable { "h" } else { "l" };
+            test_valid_sequence(format!("[?{}{}", mode, tag).as_bytes(), &[command.clone()]);
+        }
+    }
+
+    #[test]
+    fn valid_multiple_private_modes_nonstandard_enable() {
+        let codes = get_private_mode_nonstandard_commands();
+        let mut modes = Vec::new();
+        let mut commands = Vec::new();
+        for ((mode, _), command) in codes.iter().filter(|((_, is_enable), _)| *is_enable) {
+            modes.push(mode);
+            commands.push(command.clone());
+        }
+        let numbers_string: Vec<String> = modes.iter().map(|v| format!("{}", v)).collect();
+        let numbers_string = numbers_string.join(";");
+        test_valid_sequence(format!("[?{}h", numbers_string).as_bytes(), commands.as_slice());
+    }
+
+    #[test]
+    fn valid_multiple_private_modes_nonstandard_disable() {
+        let codes = get_private_mode_nonstandard_commands();
+        let mut modes = Vec::new();
+        let mut commands = Vec::new();
+        for ((mode, _), command) in codes.iter().filter(|((_, is_enable), _)| !*is_enable) {
+            modes.push(mode);
+            commands.push(command.clone());
+        }
+        let numbers_string: Vec<String> = modes.iter().map(|v| format!("{}", v)).collect();
+        let numbers_string = numbers_string.join(";");
+        test_valid_sequence(format!("[?{}l", numbers_string).as_bytes(), commands.as_slice());
+    }
+
+    #[test]
+    fn valid_set_key_modifier_option() {
+        for n in 0..5u16 {
+            if let Some(key_type) = KeyType::try_from_u16(n) {
+                for value in 0..5u16 {
+                    let command = Command::SetKeyModifierOption(key_type, Some(value));
+                    test_valid_sequence(format!("[>{};{}m", n, value).as_bytes(), &[command]);
+                }
+            }
+        }
+        for n in 0..5u16 {
+            if let Some(key_type) = KeyType::try_from_u16(n) {
+                let command = Command::SetKeyModifierOption(key_type, None);
+                test_valid_sequence(format!("[>{}m", n).as_bytes(), &[command]);
+            }
+        }
     }
 
     #[test]
@@ -244,37 +331,38 @@ mod tests {
     #[test]
     fn valid_set_multiple_graphic_styles() {
         let codes  = 0..255u16;
-        let mut numbers_string = String::new();
+        let mut valid_codes = Vec::new();
         let mut valid_styles: Vec<GraphicStyle> = vec![];
         for code in codes {
             if let Some(style) = GraphicStyle::try_from_u16(code) {
-                if numbers_string.len() > 0 {
-                    numbers_string.push(';');
-                }
-                numbers_string.extend(format!("{}", code).chars());
+                valid_codes.push(code);
                 valid_styles.push(style);
             }
         }
+        let numbers_string: Vec<String> = valid_codes.iter().map(|v| format!("{}", v)).collect();
+        let numbers_string = numbers_string.join(";");
         let commands: Vec<Command> = valid_styles.iter().map(|style| Command::SetGraphicStyle(*style)).collect();
         test_valid_sequence(format!("[{}m", numbers_string).as_bytes(), commands.as_slice());
     }
 
     #[test]
     fn valid_set_multiple_graphic_styles_with_some_invalid() {
-        let codes  = 0..255u16;
-        let mut numbers_string = String::new();
+        let codes: Vec<u16> = (0..255u16).collect();
+        let mut invalid_codes = Vec::new();
         let mut valid_styles: Vec<GraphicStyle> = vec![];
-        for code in codes {
-            if numbers_string.len() > 0 {
-                numbers_string.push(';');
-            }
-            numbers_string.extend(format!("{}", code).chars());
-            if let Some(style) = GraphicStyle::try_from_u16(code) {
+        for code in codes.iter() {
+            if let Some(style) = GraphicStyle::try_from_u16(*code) {
                 valid_styles.push(style);
+            } else {
+                invalid_codes.push(*code);
             }
         }
+        let numbers_string: Vec<String> = codes.iter().map(|v| format!("{}", v)).collect();
+        let numbers_string = numbers_string.join(";");
         let commands: Vec<Command> = valid_styles.iter().map(|style| Command::SetGraphicStyle(*style)).collect();
+        let errors: Vec<ParserError> = invalid_codes.iter().map(|code| ParserError::InvalidGraphicStyle(*code)).collect();
         test_valid_sequence(format!("[{}m", numbers_string).as_bytes(), commands.as_slice());
+        test_invalid_sequence(format!("[{}m", numbers_string).as_bytes(), None, errors.as_slice());
     }
 
     #[test]
@@ -337,6 +425,15 @@ mod tests {
     }
 
     #[test]
+    fn valid_query_key_modifier_option() {
+        for n in 0..5u16 {
+            if let Some(key_type) = KeyType::try_from_u16(n) {
+                test_valid_sequence(format!("[?{}m",n).as_bytes(), &[Command::QueryKeyModifierOption(key_type)]);
+            }
+        }
+    }
+
+    #[test]
     fn valid_tab_commands() {
         test_valid_sequence(b"H", &[Command::SetTabStopAtCurrentColumn]);
         test_valid_sequence(b"[0g", &[Command::ClearCurrentTabStop]);
@@ -396,9 +493,50 @@ mod tests {
     }
 
     #[test]
-    fn valid_bracketed_paste_mode() {
-        test_valid_sequence(b"[?2004h", &[Command::SetBracketedPasteMode(true)]);
-        test_valid_sequence(b"[?2004l", &[Command::SetBracketedPasteMode(false)]);
+    fn valid_test_window_action() {
+        test_valid_sequence(b"[1t", &[Command::WindowAction(WindowAction::Iconify(false))]);
+        test_valid_sequence(b"[2t", &[Command::WindowAction(WindowAction::Iconify(true))]);
+        test_valid_sequence(b"[5t", &[Command::WindowAction(WindowAction::SendToFront)]);
+        test_valid_sequence(b"[6t", &[Command::WindowAction(WindowAction::SendToBack)]);
+        test_valid_sequence(b"[7t", &[Command::WindowAction(WindowAction::Refresh)]);
+        test_valid_sequence(b"[9;0t", &[Command::WindowAction(WindowAction::RestoreMaximised)]);
+        test_valid_sequence(b"[9;1t", &[Command::WindowAction(WindowAction::Maximise(Vector2::new(true,true)))]);
+        test_valid_sequence(b"[9;2t", &[Command::WindowAction(WindowAction::Maximise(Vector2::new(false,true)))]);
+        test_valid_sequence(b"[9;3t", &[Command::WindowAction(WindowAction::Maximise(Vector2::new(true,false)))]);
+        test_valid_sequence(b"[10;0t", &[Command::WindowAction(WindowAction::SetFullscreen(false))]);
+        test_valid_sequence(b"[10;1t", &[Command::WindowAction(WindowAction::SetFullscreen(true))]);
+        test_valid_sequence(b"[10;2t", &[Command::WindowAction(WindowAction::ToggleFullscreen)]);
+        test_valid_sequence(b"[11t", &[Command::WindowAction(WindowAction::ReportWindowState)]);
+        test_valid_sequence(b"[13t", &[Command::WindowAction(WindowAction::ReportWindowPosition)]);
+        test_valid_sequence(b"[13;2t", &[Command::WindowAction(WindowAction::ReportTextAreaPosition)]);
+        test_valid_sequence(b"[14t", &[Command::WindowAction(WindowAction::ReportTextAreaSize)]);
+        test_valid_sequence(b"[14;2t", &[Command::WindowAction(WindowAction::ReportWindowSize)]);
+        test_valid_sequence(b"[15t", &[Command::WindowAction(WindowAction::ReportScreenSize)]);
+        test_valid_sequence(b"[16t", &[Command::WindowAction(WindowAction::ReportCellSize)]);
+        test_valid_sequence(b"[18t", &[Command::WindowAction(WindowAction::ReportTextAreaGridSize)]);
+        test_valid_sequence(b"[19t", &[Command::WindowAction(WindowAction::ReportScreenGridSize)]);
+        test_valid_sequence(b"[20t", &[Command::WindowAction(WindowAction::ReportWindowIconLabel)]);
+        test_valid_sequence(b"[21t", &[Command::WindowAction(WindowAction::ReportWindowTitle)]);
+        test_valid_sequence(b"[22;0t", &[Command::WindowAction(WindowAction::SaveIconTitle(None)), Command::WindowAction(WindowAction::SaveWindowTitle(None))]);
+        test_valid_sequence(b"[22;1t", &[Command::WindowAction(WindowAction::SaveIconTitle(None))]);
+        test_valid_sequence(b"[22;2t", &[Command::WindowAction(WindowAction::SaveWindowTitle(None))]);
+        test_valid_sequence(b"[23;0t", &[Command::WindowAction(WindowAction::RestoreIconTitle(None)), Command::WindowAction(WindowAction::RestoreWindowTitle(None))]);
+        test_valid_sequence(b"[23;1t", &[Command::WindowAction(WindowAction::RestoreIconTitle(None))]);
+        test_valid_sequence(b"[23;2t", &[Command::WindowAction(WindowAction::RestoreWindowTitle(None))]);
+        for n in 24..256 {
+            let command = Command::WindowAction(WindowAction::ResizeWindowHeight(n));
+            test_valid_sequence(format!("[{}t", n).as_bytes(), &[command]);
+        }
+
+        let values = generate_sample_values();
+        for &x in values.iter() {
+            for &y in values.iter() {
+                let pos: Vector2<u16> = Vector2::new(x.min(MAX_VALUE),y.min(MAX_VALUE));
+                test_valid_sequence(format!("[3;{};{}t",x,y).as_bytes(), &[Command::WindowAction(WindowAction::Move(pos))]);
+                test_valid_sequence(format!("[4;{};{}t",x,y).as_bytes(), &[Command::WindowAction(WindowAction::Resize(pos))]);
+                test_valid_sequence(format!("[8;{};{}t",x,y).as_bytes(), &[Command::WindowAction(WindowAction::ResizeTextArea(pos))]);
+            }
+        }
     }
 
     #[test]
@@ -423,17 +561,6 @@ mod tests {
         for v in 0..255 {
             if GraphicStyle::try_from_u16(v).is_none() {
                 test_invalid_sequence(format!("[{}m", v).as_bytes(), None, &[ParserError::InvalidGraphicStyle(v)]);
-            }
-        }
-    }
-
-    #[test]
-    fn invalid_private_modes_nonstandard() {
-        let invalid_codes = [0, 50, 1000, 2000, 4000];
-        for n in invalid_codes {
-            for c in &['h','l','c','d'] {
-                let seq = format!("[?{}{}", n, c);
-                test_invalid_sequence(seq.as_bytes(), None, &[ParserError::Unhandled]);
             }
         }
     }

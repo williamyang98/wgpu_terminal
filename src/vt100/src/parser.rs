@@ -354,8 +354,18 @@ impl Parser {
                 (1005, b'l') => self.on_success(h, Command::SetUtf8MouseMode(false)),
                 (1006, b'h') => self.on_success(h, Command::SetSelectiveGraphicRenditionMouseMode(true)),
                 (1006, b'l') => self.on_success(h, Command::SetSelectiveGraphicRenditionMouseMode(false)),
-                (1049, b'h') => self.on_success(h, Command::SetAlternateBuffer(true)),
-                (1049, b'l') => self.on_success(h, Command::SetAlternateBuffer(false)),
+                (1047, b'h') => self.on_success(h, Command::SetAlternateBuffer(true)),
+                (1047, b'l') => self.on_success(h, Command::SetAlternateBuffer(false)),
+                (1048, b'h') => self.on_success(h, Command::SaveCursorToMemory),
+                (1048, b'l') => self.on_success(h, Command::RestoreCursorFromMemory),
+                (1049, b'h') => {
+                    self.on_success(h, Command::SaveCursorToMemory);
+                    self.on_success(h, Command::SetAlternateBuffer(true));
+                },
+                (1049, b'l') => {
+                    self.on_success(h, Command::SetAlternateBuffer(false));
+                    self.on_success(h, Command::RestoreCursorFromMemory);
+                },
                 (2004, b'h') => self.on_success(h, Command::SetBracketedPasteMode(true)),
                 (2004, b'l') => self.on_success(h, Command::SetBracketedPasteMode(false)),
                 (   n, b'm') => match KeyType::try_from_u16(n) {
@@ -404,6 +414,10 @@ impl Parser {
                     None => self.on_error(h, ParserError::InvalidKeyType(n)),
                 },
                 None => self.on_error(h, ParserError::MissingNumbers { given: 0, expected: 1 }),
+            },
+            b'c' => match self.numbers.first().copied() {
+                Some(0) | None => self.on_success(h, Command::QueryTerminalIdentity),
+                _ => self.on_error(h, ParserError::Unhandled),
             },
             _ => self.on_error(h, ParserError::Unhandled),
         }

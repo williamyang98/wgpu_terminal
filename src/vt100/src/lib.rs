@@ -179,47 +179,51 @@ mod tests {
         test_valid_sequence(b">", &[Command::SetKeypadMode(InputMode::Numeric)]);
     }
 
-    fn get_private_mode_nonstandard_commands() -> HashMap<(u16,bool), Command> {
+    fn get_private_mode_nonstandard_commands() -> HashMap<(u16,bool), Vec<Command>> {
         HashMap::from([
-            ((   1, true) , Command::SetCursorKeysMode(InputMode::Application)),
-            ((   1, false), Command::SetCursorKeysMode(InputMode::Numeric)),
-            ((   3, true) , Command::SetConsoleWidth(132)),
-            ((   3, false), Command::SetConsoleWidth(80)),
-            ((   5, true) , Command::SetLightBackground),
-            ((   5, false), Command::SetDarkBackground),
-            ((  12, true) , Command::SetCursorBlinking(true)),
-            ((  12, false), Command::SetCursorBlinking(false)),
-            ((  25, true) , Command::SetCursorVisible(true)),
-            ((  25, false), Command::SetCursorVisible(false)),
-            ((  47, true) , Command::SaveScreen),
-            ((  47, false), Command::RestoreScreen),
-            ((1000, true) , Command::SetReportMouseClick(true)),
-            ((1000, false), Command::SetReportMouseClick(false)),
-            ((1001, true) , Command::SetHiliteMouseTracking(true)),
-            ((1001, false), Command::SetHiliteMouseTracking(false)),
-            ((1002, true) , Command::SetCellMouseTracking(true)),
-            ((1002, false), Command::SetCellMouseTracking(false)),
-            ((1003, true) , Command::SetAllMouseTracking(true)),
-            ((1003, false), Command::SetAllMouseTracking(false)),
-            ((1004, true) , Command::SetReportFocus(true)),
-            ((1004, false), Command::SetReportFocus(false)),
-            ((1005, true),  Command::SetUtf8MouseMode(true)),
-            ((1005, false), Command::SetUtf8MouseMode(false)),
-            ((1006, true),  Command::SetSelectiveGraphicRenditionMouseMode(true)),
-            ((1006, false), Command::SetSelectiveGraphicRenditionMouseMode(false)),
-            ((1049, true) , Command::SetAlternateBuffer(true)),
-            ((1049, false), Command::SetAlternateBuffer(false)),
-            ((2004, true),  Command::SetBracketedPasteMode(true)),
-            ((2004, false), Command::SetBracketedPasteMode(false)),
+            ((   1, true) , vec![Command::SetCursorKeysMode(InputMode::Application)]),
+            ((   1, false), vec![Command::SetCursorKeysMode(InputMode::Numeric)]),
+            ((   3, true) , vec![Command::SetConsoleWidth(132)]),
+            ((   3, false), vec![Command::SetConsoleWidth(80)]),
+            ((   5, true) , vec![Command::SetLightBackground]),
+            ((   5, false), vec![Command::SetDarkBackground]),
+            ((  12, true) , vec![Command::SetCursorBlinking(true)]),
+            ((  12, false), vec![Command::SetCursorBlinking(false)]),
+            ((  25, true) , vec![Command::SetCursorVisible(true)]),
+            ((  25, false), vec![Command::SetCursorVisible(false)]),
+            ((  47, true) , vec![Command::SaveScreen]),
+            ((  47, false), vec![Command::RestoreScreen]),
+            ((1000, true) , vec![Command::SetReportMouseClick(true)]),
+            ((1000, false), vec![Command::SetReportMouseClick(false)]),
+            ((1001, true) , vec![Command::SetHiliteMouseTracking(true)]),
+            ((1001, false), vec![Command::SetHiliteMouseTracking(false)]),
+            ((1002, true) , vec![Command::SetCellMouseTracking(true)]),
+            ((1002, false), vec![Command::SetCellMouseTracking(false)]),
+            ((1003, true) , vec![Command::SetAllMouseTracking(true)]),
+            ((1003, false), vec![Command::SetAllMouseTracking(false)]),
+            ((1004, true) , vec![Command::SetReportFocus(true)]),
+            ((1004, false), vec![Command::SetReportFocus(false)]),
+            ((1005, true),  vec![Command::SetUtf8MouseMode(true)]),
+            ((1005, false), vec![Command::SetUtf8MouseMode(false)]),
+            ((1006, true),  vec![Command::SetSelectiveGraphicRenditionMouseMode(true)]),
+            ((1006, false), vec![Command::SetSelectiveGraphicRenditionMouseMode(false)]),
+            ((1047, true) , vec![Command::SetAlternateBuffer(true)]),
+            ((1047, false), vec![Command::SetAlternateBuffer(false)]),
+            ((1048, true) , vec![Command::SaveCursorToMemory]),
+            ((1048, false), vec![Command::RestoreCursorFromMemory]),
+            ((1049, true) , vec![Command::SaveCursorToMemory, Command::SetAlternateBuffer(true)]),
+            ((1049, false), vec![Command::SetAlternateBuffer(false), Command::RestoreCursorFromMemory]),
+            ((2004, true),  vec![Command::SetBracketedPasteMode(true)]),
+            ((2004, false), vec![Command::SetBracketedPasteMode(false)]),
         ])
     }
 
     #[test]
     fn valid_private_modes_nonstandard() {
         let codes = get_private_mode_nonstandard_commands();
-        for ((mode, is_enable), command) in &codes {
+        for ((mode, is_enable), commands) in &codes {
             let tag = if *is_enable { "h" } else { "l" };
-            test_valid_sequence(format!("[?{}{}", mode, tag).as_bytes(), &[command.clone()]);
+            test_valid_sequence(format!("[?{}{}", mode, tag).as_bytes(), commands.as_slice());
         }
     }
 
@@ -228,9 +232,9 @@ mod tests {
         let codes = get_private_mode_nonstandard_commands();
         let mut modes = Vec::new();
         let mut commands = Vec::new();
-        for ((mode, _), command) in codes.iter().filter(|((_, is_enable), _)| *is_enable) {
+        for ((mode, _), sub_commands) in codes.iter().filter(|((_, is_enable), _)| *is_enable) {
             modes.push(mode);
-            commands.push(command.clone());
+            commands.extend_from_slice(sub_commands.as_slice());
         }
         let numbers_string: Vec<String> = modes.iter().map(|v| format!("{}", v)).collect();
         let numbers_string = numbers_string.join(";");
@@ -242,9 +246,9 @@ mod tests {
         let codes = get_private_mode_nonstandard_commands();
         let mut modes = Vec::new();
         let mut commands = Vec::new();
-        for ((mode, _), command) in codes.iter().filter(|((_, is_enable), _)| !*is_enable) {
+        for ((mode, _), sub_commands) in codes.iter().filter(|((_, is_enable), _)| !*is_enable) {
             modes.push(mode);
-            commands.push(command.clone());
+            commands.extend_from_slice(sub_commands.as_slice());
         }
         let numbers_string: Vec<String> = modes.iter().map(|v| format!("{}", v)).collect();
         let numbers_string = numbers_string.join(";");

@@ -35,6 +35,11 @@ impl TerminalProcess for ConptyProcess {
         self.process.resize(size.x as i16, size.y as i16)?;
         Ok(())
     }
+
+    fn is_newline_carriage_return(&self) -> bool {
+        // conpty converts \n to \r\n
+        false
+    }
 }
 
 impl Drop for ConptyProcess {

@@ -21,7 +21,11 @@ pub struct Terminal {
 
 impl Terminal {
     pub fn new(mut process: Box<dyn TerminalProcess>) -> Self {
-        let display = Arc::new(Mutex::new(TerminalDisplay::default()));
+        let mut display = TerminalDisplay::default();
+        display.get_viewport_mut().set_is_newline_carriage_return(process.is_newline_carriage_return());
+
+        let display = Arc::new(Mutex::new(display));
+
         let read_thread = std::thread::spawn({
             let display = display.clone();
             let read_pipe = process.get_read_pipe();

@@ -35,6 +35,10 @@ impl TerminalProcess for RawProcess {
     fn set_size(&mut self, _size: Vector2<usize>) -> Result<(), Box<dyn Error>> {
         Ok(())
     }
+
+    fn is_newline_carriage_return(&self) -> bool {
+        true
+    }
 }
 
 impl Drop for RawProcess {

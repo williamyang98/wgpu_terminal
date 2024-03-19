@@ -248,6 +248,21 @@ impl Parser {
                 _ => self.on_error(h, ParserError::Unhandled),
             },
             b't' => self.read_window_action(h),
+            // reset/set modes (this is different but similar to ESC [ ? <n> h/l
+            b'h' => match self.try_get_numbers(1).map(|v| v[0]) {
+                Err(err) => self.on_error(h, err),
+                Ok(2) => self.on_success(h, Command::SetKeyboardActionMode(true)),
+                Ok(4) => self.on_success(h, Command::SetInsertMode),
+                Ok(20) => self.on_success(h, Command::SetAutomaticNewline),
+                _ => self.on_error(h, ParserError::Unhandled),
+            },
+            b'l' => match self.try_get_numbers(1).map(|v| v[0]) {
+                Err(err) => self.on_error(h, err),
+                Ok(2) => self.on_success(h, Command::SetKeyboardActionMode(false)),
+                Ok(4) => self.on_success(h, Command::SetReplaceMode),
+                Ok(20) => self.on_success(h, Command::SetNormalLinefeed),
+                _ => self.on_error(h, ParserError::Unhandled),
+            },
             b' ' => {
                 self.context = ParserContext::ControlSequenceIntroducerSpace;
                 self.state = ParserState::Characters;

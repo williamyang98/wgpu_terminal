@@ -46,7 +46,7 @@ impl Default for TerminalDisplay {
         let colour_table: Vec<Rgb8> = XTERM_COLOUR_TABLE
             .iter()
             .map(|v| {
-                const A: u8 = 80;
+                const A: u8 = 0;
                 let mut rgb = convert_u32_to_rgb(*v);
                 rgb.r = rgb.r.saturating_add(A);
                 rgb.g = rgb.g.saturating_add(A);
@@ -182,6 +182,12 @@ impl Vt100ParserHandler for TerminalDisplay {
             },
             Vt100Command::SetBackgroundColourRgb(rgb) => {
                 let pen = self.viewport.get_pen_mut();
+                // FIXME: Why is the background so bright???
+                let rgb = Rgb8 { 
+                    r: rgb.r / 8,
+                    g: rgb.g / 8,
+                    b: rgb.b / 8,
+                };
                 pen.background_colour = rgb;
             },
             Vt100Command::SetForegroundColourRgb(rgb) => {
@@ -199,84 +205,116 @@ impl Vt100ParserHandler for TerminalDisplay {
             // erase data
             Vt100Command::EraseInDisplay(mode) => match mode {
                 EraseMode::FromCursorToEnd => {
+                    let pen = *self.viewport.get_pen();
                     let size = self.viewport.get_size();
                     let cursor = self.viewport.get_cursor();
                     for y in (cursor.y+1)..size.y {
                         let (line, status) = self.viewport.get_row_mut(y);
-                        line.fill(Cell::default());
-                        *status = LineStatus::default();
+                        line.iter_mut().for_each(|c| {
+                            c.character = ' '; 
+                            c.colour_from_pen(&pen);
+                        });
+                        status.length = size.x;
+                        status.is_linebreak = true;
                     }
                     let (line, status) = self.viewport.get_row_mut(cursor.y);
-                    line[cursor.x..].fill(Cell::default());
-                    status.is_linebreak = false;
-                    status.length = cursor.x;
+                    line[cursor.x..status.length].iter_mut().for_each(|c| {
+                        c.character = ' ';
+                        c.colour_from_pen(&pen);
+                    });
                 },
                 EraseMode::FromCursorToStart => {
+                    let pen = *self.viewport.get_pen();
+                    let size = self.viewport.get_size();
                     let cursor = self.viewport.get_cursor();
                     for y in 0..cursor.y {
                         let (line, status) = self.viewport.get_row_mut(y);
-                        line.fill(Cell::default());
-                        *status = LineStatus::default();
+                        line.iter_mut().for_each(|c| {
+                            c.character = ' '; 
+                            c.colour_from_pen(&pen);
+                        });
+                        status.length = size.x;
+                        status.is_linebreak = true;
                     }
                     let (line, _) = self.viewport.get_row_mut(cursor.y);
-                    line[..=cursor.x].fill(Cell::default());
+                    line[..=cursor.x].iter_mut().for_each(|c| {
+                        c.character = ' ';
+                        c.colour_from_pen(&pen);
+                    });
                 },
-                EraseMode::EntireDisplay => {
+                EraseMode::EntireDisplay | EraseMode::SavedLines => {
+                    let pen = *self.viewport.get_pen();
                     let size = self.viewport.get_size();
                     for y in 0..size.y {
                         let (line, status) = self.viewport.get_row_mut(y);
-                        line.fill(Cell::default());
-                        *status = LineStatus::default();
-                    }
-                },
-                EraseMode::SavedLines => {
-                    let size = self.viewport.get_size();
-                    for y in 0..size.y {
-                        let (line, status) = self.viewport.get_row_mut(y);
-                        line.fill(Cell::default());
-                        *status = LineStatus::default();
+                        line.iter_mut().for_each(|c| {
+                            c.character = ' '; 
+                            c.colour_from_pen(&pen);
+                        });
+                        status.length = size.x;
+                        status.is_linebreak = true;
                     }
                 },
             },
             Vt100Command::EraseInLine(mode) => match mode {
                 EraseMode::FromCursorToEnd => {
+                    let pen = *self.viewport.get_pen();
+                    let size = self.viewport.get_size();
                     let cursor = self.viewport.get_cursor();
                     let (line, status) = self.viewport.get_row_mut(cursor.y);
-                    line[cursor.x..].fill(Cell::default());
-                    status.length = cursor.x;
-                    status.is_linebreak = false;
+                    line[cursor.x..].iter_mut().for_each(|c| {
+                        c.character = ' '; 
+                        c.colour_from_pen(&pen);
+                    });
+                    status.length = size.x;
+                    status.is_linebreak = true;
                 },
                 EraseMode::FromCursorToStart => {
+                    let pen = *self.viewport.get_pen();
+                    let size = self.viewport.get_size();
                     let cursor = self.viewport.get_cursor();
                     let (line, _) = self.viewport.get_row_mut(cursor.y);
-                    line[..=cursor.x].fill(Cell::default());
+                    line[..=cursor.x].iter_mut().for_each(|c| {
+                        c.character = ' '; 
+                        c.colour_from_pen(&pen);
+                    });
                 },
-                EraseMode::EntireDisplay => {
+                EraseMode::EntireDisplay | EraseMode::SavedLines => {
+                    let pen = *self.viewport.get_pen();
+                    let size = self.viewport.get_size();
                     let cursor = self.viewport.get_cursor();
-                    let (line, _) = self.viewport.get_row_mut(cursor.y);
-                    line.fill(Cell::default());
-                },
-                EraseMode::SavedLines => {
-                    let cursor = self.viewport.get_cursor();
-                    let (line, _) = self.viewport.get_row_mut(cursor.y);
-                    line.fill(Cell::default());
+                    let (line, status) = self.viewport.get_row_mut(cursor.y);
+                    line.iter_mut().for_each(|c| {
+                        c.character = ' ';
+                        c.colour_from_pen(&pen);
+                    });
+                    status.length = size.x;
+                    status.is_linebreak = true;
                 },
             },
             Vt100Command::ReplaceWithSpaces(total) => {
+                let pen = *self.viewport.get_pen();
                 let cursor = self.viewport.get_cursor();
                 let (line, _) = self.viewport.get_row_mut(cursor.y);
                 let region = &mut line[cursor.x..];
                 let total = (total as usize).min(region.len());
-                region[..total].iter_mut().for_each(|c| c.character = ' ');
+                region[..total].iter_mut().for_each(|c| {
+                    c.character = ' ';
+                    c.colour_from_pen(&pen);
+                });
             },
             Vt100Command::InsertSpaces(total) => {
+                let pen = *self.viewport.get_pen();
                 let cursor = self.viewport.get_cursor();
                 let (line, status) = self.viewport.get_row_mut(cursor.y);
                 let region = &mut line[cursor.x..];
                 let total = (total as usize).min(region.len());
                 let shift = region.len()-total;
                 region.copy_within(0..shift, total);
-                region[..total].iter_mut().for_each(|c| c.character = ' ');
+                region[..total].iter_mut().for_each(|c| {
+                    c.character = ' ';
+                    c.colour_from_pen(&pen);
+                });
                 status.length = (status.length+total).min(line.len());
             },
             Vt100Command::DeleteCharacters(total) => {

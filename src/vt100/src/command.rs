@@ -85,6 +85,12 @@ pub enum Command {
     SetCursorStyle(CursorStyle),
     SetWarningBellVolume(BellVolume),
     SetMarginBellVolume(BellVolume),
+    // ESC [ <n> h/l
+    SetKeyboardActionMode(bool),
+    SetInsertMode,
+    SetReplaceMode,
+    SetAutomaticNewline,
+    SetNormalLinefeed,
     // modifier keys
     SetKeyModifierOption(KeyType, Option<u16>),
     // soft reset

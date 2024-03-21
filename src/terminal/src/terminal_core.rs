@@ -18,6 +18,7 @@ use crate::{
     utf8_parser::ParserError as Utf8ParserError,
 };
 use cgmath::Vector2;
+use vt100::common::WindowAction;
 
 // converts parser output to thread safe commands to terminal components
 pub struct TerminalCore {
@@ -32,11 +33,13 @@ impl TerminalParserHandler for TerminalCore {
         for b in buf {
             display.write_ascii(*b);
         }
+        self.window.on_window_action(WindowAction::Refresh);
     }
 
     fn on_utf8(&mut self, character: char) {
         let mut display = self.display.lock().unwrap();
         display.write_utf8(character);
+        self.window.on_window_action(WindowAction::Refresh);
     }
 
     fn on_unhandled_byte(&mut self, byte: u8) {
@@ -61,16 +64,24 @@ impl TerminalParserHandler for TerminalCore {
                 let mut display = self.display.lock().unwrap();
                 let pen = display.get_pen_mut();
                 // FIXME: Why is the background so bright???
+                const A: u8 = 7;
                 let rgb = Rgb8 { 
-                    r: rgb.r / 6,
-                    g: rgb.g / 6,
-                    b: rgb.b / 6,
+                    r: rgb.r / A,
+                    g: rgb.g / A,
+                    b: rgb.b / A,
                 };
                 pen.background_colour = rgb;
             },
             Vt100Command::SetForegroundColourRgb(rgb) => {
                 let mut display = self.display.lock().unwrap();
                 let pen = display.get_pen_mut();
+                // FIXME: Why is the foreground so desaturated???
+                const A: u8 = 20;
+                let rgb = Rgb8 { 
+                    r: rgb.r.saturating_sub(A),
+                    g: rgb.g.saturating_sub(A),
+                    b: rgb.b.saturating_sub(A),
+                };
                 pen.foreground_colour = rgb;
             },
             Vt100Command::SetBackgroundColourTable(index) => {
@@ -107,6 +118,7 @@ impl TerminalParserHandler for TerminalCore {
                         c.character = ' ';
                         pen.colour_in_cell(c);
                     });
+                    self.window.on_window_action(WindowAction::Refresh);
                 },
                 EraseMode::FromCursorToStart => {
                     let mut display = self.display.lock().unwrap();
@@ -128,6 +140,7 @@ impl TerminalParserHandler for TerminalCore {
                         c.character = ' ';
                         pen.colour_in_cell(c);
                     });
+                    self.window.on_window_action(WindowAction::Refresh);
                 },
                 EraseMode::EntireDisplay | EraseMode::SavedLines => {
                     let mut display = self.display.lock().unwrap();
@@ -143,6 +156,7 @@ impl TerminalParserHandler for TerminalCore {
                         status.length = size.x;
                         status.is_linebreak = true;
                     }
+                    self.window.on_window_action(WindowAction::Refresh);
                 },
             },
             Vt100Command::EraseInLine(mode) => match mode {
@@ -159,6 +173,7 @@ impl TerminalParserHandler for TerminalCore {
                     });
                     status.length = size.x;
                     status.is_linebreak = true;
+                    self.window.on_window_action(WindowAction::Refresh);
                 },
                 EraseMode::FromCursorToStart => {
                     let mut display = self.display.lock().unwrap();
@@ -170,6 +185,7 @@ impl TerminalParserHandler for TerminalCore {
                         c.character = ' '; 
                         pen.colour_in_cell(c);
                     });
+                    self.window.on_window_action(WindowAction::Refresh);
                 },
                 EraseMode::EntireDisplay | EraseMode::SavedLines => {
                     let mut display = self.display.lock().unwrap();
@@ -184,6 +200,7 @@ impl TerminalParserHandler for TerminalCore {
                     });
                     status.length = size.x;
                     status.is_linebreak = true;
+                    self.window.on_window_action(WindowAction::Refresh);
                 },
             },
             Vt100Command::ReplaceWithSpaces(total) => {
@@ -198,6 +215,7 @@ impl TerminalParserHandler for TerminalCore {
                     c.character = ' ';
                     pen.colour_in_cell(c);
                 });
+                self.window.on_window_action(WindowAction::Refresh);
             },
             Vt100Command::InsertSpaces(total) => {
                 let mut display = self.display.lock().unwrap();
@@ -214,6 +232,7 @@ impl TerminalParserHandler for TerminalCore {
                     pen.colour_in_cell(c);
                 });
                 status.length = (status.length+total).min(line.len());
+                self.window.on_window_action(WindowAction::Refresh);
             },
             Vt100Command::DeleteCharacters(total) => {
                 let mut display = self.display.lock().unwrap();
@@ -224,6 +243,7 @@ impl TerminalParserHandler for TerminalCore {
                 let total = (total as usize).min(region.len());
                 region.copy_within(total.., 0);
                 status.length = status.length.saturating_sub(total);
+                self.window.on_window_action(WindowAction::Refresh);
             },
             Vt100Command::InsertLines(total_insert) => {
                 let mut display = self.display.lock().unwrap();
@@ -239,6 +259,7 @@ impl TerminalParserHandler for TerminalCore {
                     status.length = 0;
                     status.is_linebreak = true;
                 }
+                self.window.on_window_action(WindowAction::Refresh);
             },
             Vt100Command::DeleteLines(total_delete) => {
                 let mut display = self.display.lock().unwrap();
@@ -254,6 +275,7 @@ impl TerminalParserHandler for TerminalCore {
                     status.length = 0;
                     status.is_linebreak = true;
                 }
+                self.window.on_window_action(WindowAction::Refresh);
             },
             Vt100Command::MoveCursorPositionViewport(pos) => {
                 let mut display = self.display.lock().unwrap();
@@ -262,6 +284,7 @@ impl TerminalParserHandler for TerminalCore {
                 let x = pos.x.saturating_sub(1) as usize;
                 let y = pos.y.saturating_sub(1) as usize;
                 viewport.set_cursor(Vector2::new(x,y));
+                self.window.on_window_action(WindowAction::Refresh);
             },
             Vt100Command::MoveCursorUp(total) => {
                 let mut display = self.display.lock().unwrap();
@@ -269,6 +292,7 @@ impl TerminalParserHandler for TerminalCore {
                 let mut cursor = viewport.get_cursor();
                 cursor.y = cursor.y.saturating_sub(total as usize);
                 viewport.set_cursor(cursor);
+                self.window.on_window_action(WindowAction::Refresh);
             },
             Vt100Command::MoveCursorDown(total) => {
                 let mut display = self.display.lock().unwrap();
@@ -276,6 +300,7 @@ impl TerminalParserHandler for TerminalCore {
                 let mut cursor = viewport.get_cursor();
                 cursor.y += total as usize;
                 viewport.set_cursor(cursor);
+                self.window.on_window_action(WindowAction::Refresh);
             },
             Vt100Command::MoveCursorRight(total) => {
                 let mut display = self.display.lock().unwrap();
@@ -283,6 +308,7 @@ impl TerminalParserHandler for TerminalCore {
                 let mut cursor = viewport.get_cursor();
                 cursor.x += total as usize;
                 viewport.set_cursor(cursor);
+                self.window.on_window_action(WindowAction::Refresh);
             },
             Vt100Command::MoveCursorLeft(total) => {
                 let mut display = self.display.lock().unwrap();
@@ -290,6 +316,7 @@ impl TerminalParserHandler for TerminalCore {
                 let mut cursor = viewport.get_cursor();
                 cursor.x = cursor.x.saturating_sub(total as usize);
                 viewport.set_cursor(cursor);
+                self.window.on_window_action(WindowAction::Refresh);
             },
             Vt100Command::MoveCursorReverseIndex => {
                 let mut display = self.display.lock().unwrap();
@@ -297,6 +324,7 @@ impl TerminalParserHandler for TerminalCore {
                 let mut cursor = viewport.get_cursor();
                 cursor.y = cursor.y.saturating_sub(1);
                 viewport.set_cursor(cursor);
+                self.window.on_window_action(WindowAction::Refresh);
             },
             Vt100Command::MoveCursorNextLine(total) => {
                 let mut display = self.display.lock().unwrap();
@@ -304,6 +332,7 @@ impl TerminalParserHandler for TerminalCore {
                 let mut cursor = viewport.get_cursor();
                 cursor.y = total.saturating_sub(1) as usize;
                 viewport.set_cursor(cursor);
+                self.window.on_window_action(WindowAction::Refresh);
             },
             Vt100Command::MoveCursorPreviousLine(total) => {
                 let mut display = self.display.lock().unwrap();
@@ -311,6 +340,7 @@ impl TerminalParserHandler for TerminalCore {
                 let mut cursor = viewport.get_cursor();
                 cursor.y = total.saturating_sub(1) as usize;
                 viewport.set_cursor(cursor);
+                self.window.on_window_action(WindowAction::Refresh);
             },
             Vt100Command::MoveCursorHorizontalAbsolute(total) => {
                 let mut display = self.display.lock().unwrap();
@@ -318,6 +348,7 @@ impl TerminalParserHandler for TerminalCore {
                 let mut cursor = viewport.get_cursor();
                 cursor.x = total.saturating_sub(1) as usize;
                 viewport.set_cursor(cursor);
+                self.window.on_window_action(WindowAction::Refresh);
             },
             Vt100Command::MoveCursorVerticalAbsolute(total) => {
                 let mut display = self.display.lock().unwrap();
@@ -325,6 +356,7 @@ impl TerminalParserHandler for TerminalCore {
                 let mut cursor = viewport.get_cursor();
                 cursor.y = total.saturating_sub(1) as usize;
                 viewport.set_cursor(cursor);
+                self.window.on_window_action(WindowAction::Refresh);
             },
             Vt100Command::ScrollUp(_total) => {
                 // TODO:
@@ -339,22 +371,26 @@ impl TerminalParserHandler for TerminalCore {
             Vt100Command::RestoreCursorFromMemory => {
                 let mut display = self.display.lock().unwrap();
                 display.restore_cursor();
+                self.window.on_window_action(WindowAction::Refresh);
             },
             // cursor status
             Vt100Command::SetCursorBlinking(is_blink) => {
                 let mut display = self.display.lock().unwrap();
                 let cursor = display.get_cursor_status_mut();
                 cursor.is_blinking = is_blink;
+                self.window.on_window_action(WindowAction::Refresh);
             },
             Vt100Command::SetCursorVisible(is_visible) => {
                 let mut display = self.display.lock().unwrap();
                 let cursor = display.get_cursor_status_mut();
                 cursor.is_visible = is_visible;
+                self.window.on_window_action(WindowAction::Refresh);
             },
             Vt100Command::SetCursorStyle(style) => {
                 let mut display = self.display.lock().unwrap();
                 let cursor = display.get_cursor_status_mut();
                 cursor.style = style;
+                self.window.on_window_action(WindowAction::Refresh);
             },
             // keyboard
             Vt100Command::SetKeypadMode(input_mode) => {

@@ -31,6 +31,7 @@ pub struct AppWindow<'a> {
     wgpu_device: wgpu::Device,
     wgpu_queue: wgpu::Queue,
     renderer: Renderer,
+    is_redraw_requested: bool,
     current_frame: usize,
     frame_counter: FrameCounter,
 }
@@ -100,6 +101,7 @@ impl<'a> AppWindow<'a> {
             wgpu_device,
             wgpu_queue,
             renderer,
+            is_redraw_requested: false,
             current_frame: 0,
             frame_counter: FrameCounter::default(),
         })
@@ -116,10 +118,7 @@ impl<'a> AppWindow<'a> {
                     let new_size = Vector2::new(new_size.width as usize, new_size.height as usize);
                     self.on_resize(new_size);
                 },
-                WindowEvent::RedrawRequested => {
-                    self.on_redraw_requested();
-                    self.winit_window.request_redraw();
-                },
+                WindowEvent::RedrawRequested => self.on_redraw_requested(),
                 _ => {
                     // log::info!("Unhandled: {:?}", event);
                 },
@@ -133,9 +132,17 @@ impl<'a> AppWindow<'a> {
         }
     }
 
+    fn trigger_redraw(&mut self) {
+        if !self.is_redraw_requested {
+            self.is_redraw_requested = true;
+            self.winit_window.request_redraw();
+        }
+    }
+
     fn on_window_action(&mut self, action: WindowAction) {
         match action {
             WindowAction::SetWindowTitle(title) => self.winit_window.set_title(title.as_str()),
+            WindowAction::Refresh => self.trigger_redraw(),
             _ => {
                 log::info!("Unhandled: {:?}", action);
             }
@@ -160,6 +167,7 @@ impl<'a> AppWindow<'a> {
                 }
             },
         }
+        self.trigger_redraw();
     }
 
     pub fn on_resize(&mut self, new_size: Vector2<usize>) {
@@ -177,10 +185,11 @@ impl<'a> AppWindow<'a> {
         self.renderer.update_render_scale(&self.wgpu_queue, new_render_scale);
         self.terminal.set_size(new_grid_size);
         self.terminal_renderer.set_size(new_grid_size);
-        self.winit_window.request_redraw();
+        self.trigger_redraw();
     }
 
     fn on_redraw_requested(&mut self) {
+        self.is_redraw_requested = false;
         self.update_grid_from_terminal();
         let frame = self.wgpu_surface.get_current_texture().expect("Failed to acquire next swap chain texture");
         let view = frame.texture.create_view(&wgpu::TextureViewDescriptor::default());
@@ -286,19 +295,26 @@ impl<'a> AppWindow<'a> {
 
         if let PhysicalKey::Code(code) = event.physical_key {
             let size = self.terminal_renderer.get_size();
+            let mut is_render = true;
             match code {
-                KeyCode::End      => return self.terminal_renderer.scroll_to_bottom(),
-                KeyCode::Home     => return self.terminal_renderer.scroll_to_top(),
-                KeyCode::PageDown => return self.terminal_renderer.scroll_down(size.y),
-                KeyCode::PageUp   => return self.terminal_renderer.scroll_up(size.y),
-                _ => {},
+                KeyCode::End      => self.terminal_renderer.scroll_to_bottom(),
+                KeyCode::Home     => self.terminal_renderer.scroll_to_top(),
+                KeyCode::PageDown => self.terminal_renderer.scroll_down(size.y),
+                KeyCode::PageUp   => self.terminal_renderer.scroll_up(size.y),
+                _ => { is_render = false; },
+            }
+            if is_render {
+                self.trigger_redraw();
+                return;
             }
         }
 
         if event.physical_key == PhysicalKey::Code(KeyCode::Space) {
             let mut keyboard = self.terminal.get_keyboard();
             keyboard.on_key_press(TKey::Char(' '));
+            drop(keyboard);
             self.terminal_renderer.scroll_to_bottom();
+            self.trigger_redraw();
             return;
         }
         if let Key::Character(string) = event.logical_key {
@@ -306,7 +322,9 @@ impl<'a> AppWindow<'a> {
             for c in string.chars() {
                 keyboard.on_key_press(TKey::Char(c));
             }
+            drop(keyboard);
             self.terminal_renderer.scroll_to_bottom();
+            self.trigger_redraw();
         }
     }
 }

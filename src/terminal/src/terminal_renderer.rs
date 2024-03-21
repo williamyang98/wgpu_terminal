@@ -87,6 +87,7 @@ impl TerminalRenderer {
             cursor.y += 1;
         }
         // render viewport
+        let viewport_cursor = viewport.get_cursor();
         for y in 0..size.y {
             if cursor.y >= size.y {
                 break;
@@ -94,8 +95,15 @@ impl TerminalRenderer {
             let (src_row, status) = viewport.get_row(y);
             assert!(status.length <= size.x);
             let dst_index = cursor.y*size.x;
-            let dst_row = &mut self.cells[dst_index..(dst_index+status.length)];
-            dst_row.copy_from_slice(&src_row[..status.length]);
+            let dst_row = &mut self.cells[dst_index..(dst_index+size.x)];
+            dst_row.copy_from_slice(src_row);
+            dst_row[status.length..].iter_mut().for_each(|c| c.character = ' ');
+            // TODO: render cursor properly with all the different styles
+            if y == viewport_cursor.y {
+                let x = viewport_cursor.x.min(size.x-1);
+                let cell = &mut dst_row[x];
+                std::mem::swap(&mut cell.foreground_colour, &mut cell.background_colour);
+            }
             cursor.y += 1;
         }
     }

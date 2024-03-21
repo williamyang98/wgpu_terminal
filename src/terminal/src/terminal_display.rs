@@ -1,26 +1,22 @@
 use crate::{
-    primitives::{Cell, StyleFlags, Pen},
-    terminal_parser::TerminalParserHandler,
-    utf8_parser::ParserError as Utf8ParserError,
+    primitives::{Cell,StyleFlags, Pen},
     colour_table::{XTERM_COLOUR_TABLE, convert_u32_to_rgb},
-    viewport::{Viewport, LineStatus},
+    viewport::Viewport,
+};
+use vt100::{
+    common::{
+        CursorStyle,
+        GraphicStyle,
+        Rgb8,
+    },
 };
 use cgmath::Vector2;
-use vt100::{
-    parser::{
-        Parser as Vt100Parser, 
-        ParserError as Vt100ParserError,
-        ParserHandler as Vt100ParserHandler,
-    },
-    command::Command as Vt100Command,
-    misc::EraseMode,
-    graphic_style::{Rgb8, GraphicStyle},
-};
 
 #[derive(Clone,Copy,Debug)]
 pub struct CursorStatus {
-    is_visible: bool,
-    is_blinking: bool,
+    pub is_visible: bool,
+    pub is_blinking: bool,
+    pub style: CursorStyle,
 }
 
 impl Default for CursorStatus {
@@ -28,6 +24,7 @@ impl Default for CursorStatus {
         Self {
             is_visible: true,
             is_blinking: true,
+            style: CursorStyle::Block,
         }
     }
 }
@@ -37,8 +34,10 @@ pub struct TerminalDisplay {
     viewport: Viewport,
     cursor_status: CursorStatus,
     saved_cursor: Option<Vector2<usize>>,
+    pen: Pen,
     default_pen: Pen,
     colour_table: Vec<Rgb8>,
+    is_newline_carriage_return: bool, // if true then \n will also set cursor.x = 0
 }
 
 impl Default for TerminalDisplay {
@@ -46,7 +45,7 @@ impl Default for TerminalDisplay {
         let colour_table: Vec<Rgb8> = XTERM_COLOUR_TABLE
             .iter()
             .map(|v| {
-                const A: u8 = 0;
+                const A: u8 = 80;
                 let mut rgb = convert_u32_to_rgb(*v);
                 rgb.r = rgb.r.saturating_add(A);
                 rgb.g = rgb.g.saturating_add(A);
@@ -60,15 +59,15 @@ impl Default for TerminalDisplay {
             background_colour: Rgb8 { r: 0, b: 0, g: 0 },
             style_flags: StyleFlags::None,
         };
-        let mut res = Self {
+        Self {
             viewport: Viewport::default(),
             cursor_status: CursorStatus::default(),
             saved_cursor: None,
+            pen: default_pen,
             default_pen,
             colour_table,
-        };
-        *res.viewport.get_pen_mut() = res.default_pen;
-        res
+            is_newline_carriage_return: false,
+        }
     }
 }
 
@@ -81,8 +80,16 @@ impl TerminalDisplay {
         &mut self.viewport
     }
 
-    fn set_graphic_style(&mut self, style: GraphicStyle) {
-        let pen = self.viewport.get_pen_mut();
+    pub fn get_pen(&self) -> &Pen {
+        &self.pen
+    }
+
+    pub fn get_pen_mut(&mut self) -> &mut Pen {
+        &mut self.pen
+    }
+
+    pub fn set_graphic_style(&mut self, style: GraphicStyle) {
+        let pen = &mut self.pen;
         match style {
             GraphicStyle::ResetAll => {
                 *pen = self.default_pen;
@@ -145,283 +152,58 @@ impl TerminalDisplay {
             GraphicStyle::BrightBackgroundWhite => { pen.background_colour = self.colour_table[7]; },
         }
     }
-}
 
-impl TerminalParserHandler for TerminalDisplay {
-    fn on_ascii_data(&mut self, buf: &[u8]) {
-        for b in buf {
-            self.viewport.write_ascii(*b);
+    pub fn write_utf8(&mut self, character: char) {
+        let mut cell = Cell { character, ..Cell::default() };
+        self.pen.colour_in_cell(&mut cell);
+        self.viewport.write_cell(&cell);
+    }
+
+    pub fn get_colour_from_table(&self, index: u8) -> Rgb8 {
+        self.colour_table[index as usize]
+    }
+
+    pub fn write_ascii(&mut self, b: u8) {
+        match b {
+            b'\n' => {
+                self.viewport.feed_newline(true);
+                if self.is_newline_carriage_return {
+                    self.viewport.carriage_return();
+                }
+            }, 
+            b'\r' => self.viewport.carriage_return(),
+            b'\x08' => { 
+                let mut cursor = self.viewport.get_cursor(); 
+                cursor.x = cursor.x.saturating_sub(1);
+                self.viewport.set_cursor(cursor);
+            },
+            b' '..=b'~' => { self.write_utf8(b as char); },
+            b'\x07' => { log::info!("Ding ding ding (BELL)"); },
+            b => { log::error!("Unhandled byte: {}", b); },
         }
     }
 
-    fn on_utf8(&mut self, character: char) {
-        self.viewport.write_utf8(character);
+    pub fn set_is_newline_carriage_return(&mut self, v: bool) {
+        self.is_newline_carriage_return = v;
     }
 
-    fn on_unhandled_byte(&mut self, byte: u8) {
-        log::error!("[unknown-byte] ({:?})", byte);
+    pub(crate) fn save_cursor(&mut self) {
+        let cursor = self.viewport.get_cursor();
+        self.saved_cursor = Some(cursor);
     }
 
-    fn on_utf8_error(&mut self, error: &Utf8ParserError) {
-        log::error!("[utf8-error] {:?}", error);
-    }
-}
-
-impl Vt100ParserHandler for TerminalDisplay {
-    fn on_command(&mut self, c: Vt100Command) {
-        match c {
-            Vt100Command::SetWindowTitle(title) => {
-                log::info!("[vt100] SetWindowTitle({})", title);
-            },
-            Vt100Command::SetHyperlink(link) => {
-                log::info!("[vt100] SetHyperlink({})", link); 
-            },
-            // set pen colour
-            Vt100Command::SetGraphicStyle(style) => {
-                self.set_graphic_style(style);
-            },
-            Vt100Command::SetBackgroundColourRgb(rgb) => {
-                let pen = self.viewport.get_pen_mut();
-                // FIXME: Why is the background so bright???
-                let rgb = Rgb8 { 
-                    r: rgb.r / 8,
-                    g: rgb.g / 8,
-                    b: rgb.b / 8,
-                };
-                pen.background_colour = rgb;
-            },
-            Vt100Command::SetForegroundColourRgb(rgb) => {
-                let pen = self.viewport.get_pen_mut();
-                pen.foreground_colour = rgb;
-            },
-            Vt100Command::SetBackgroundColourTable(index) => {
-                let pen = self.viewport.get_pen_mut();
-                pen.background_colour = self.colour_table[index as usize];
-            },
-            Vt100Command::SetForegroundColourTable(index) => {
-                let pen = self.viewport.get_pen_mut();
-                pen.foreground_colour = self.colour_table[index as usize];
-            },
-            // erase data
-            Vt100Command::EraseInDisplay(mode) => match mode {
-                EraseMode::FromCursorToEnd => {
-                    let pen = *self.viewport.get_pen();
-                    let size = self.viewport.get_size();
-                    let cursor = self.viewport.get_cursor();
-                    for y in (cursor.y+1)..size.y {
-                        let (line, status) = self.viewport.get_row_mut(y);
-                        line.iter_mut().for_each(|c| {
-                            c.character = ' '; 
-                            c.colour_from_pen(&pen);
-                        });
-                        status.length = size.x;
-                        status.is_linebreak = true;
-                    }
-                    let (line, status) = self.viewport.get_row_mut(cursor.y);
-                    line[cursor.x..status.length].iter_mut().for_each(|c| {
-                        c.character = ' ';
-                        c.colour_from_pen(&pen);
-                    });
-                },
-                EraseMode::FromCursorToStart => {
-                    let pen = *self.viewport.get_pen();
-                    let size = self.viewport.get_size();
-                    let cursor = self.viewport.get_cursor();
-                    for y in 0..cursor.y {
-                        let (line, status) = self.viewport.get_row_mut(y);
-                        line.iter_mut().for_each(|c| {
-                            c.character = ' '; 
-                            c.colour_from_pen(&pen);
-                        });
-                        status.length = size.x;
-                        status.is_linebreak = true;
-                    }
-                    let (line, _) = self.viewport.get_row_mut(cursor.y);
-                    line[..=cursor.x].iter_mut().for_each(|c| {
-                        c.character = ' ';
-                        c.colour_from_pen(&pen);
-                    });
-                },
-                EraseMode::EntireDisplay | EraseMode::SavedLines => {
-                    let pen = *self.viewport.get_pen();
-                    let size = self.viewport.get_size();
-                    for y in 0..size.y {
-                        let (line, status) = self.viewport.get_row_mut(y);
-                        line.iter_mut().for_each(|c| {
-                            c.character = ' '; 
-                            c.colour_from_pen(&pen);
-                        });
-                        status.length = size.x;
-                        status.is_linebreak = true;
-                    }
-                },
-            },
-            Vt100Command::EraseInLine(mode) => match mode {
-                EraseMode::FromCursorToEnd => {
-                    let pen = *self.viewport.get_pen();
-                    let size = self.viewport.get_size();
-                    let cursor = self.viewport.get_cursor();
-                    let (line, status) = self.viewport.get_row_mut(cursor.y);
-                    line[cursor.x..].iter_mut().for_each(|c| {
-                        c.character = ' '; 
-                        c.colour_from_pen(&pen);
-                    });
-                    status.length = size.x;
-                    status.is_linebreak = true;
-                },
-                EraseMode::FromCursorToStart => {
-                    let pen = *self.viewport.get_pen();
-                    let size = self.viewport.get_size();
-                    let cursor = self.viewport.get_cursor();
-                    let (line, _) = self.viewport.get_row_mut(cursor.y);
-                    line[..=cursor.x].iter_mut().for_each(|c| {
-                        c.character = ' '; 
-                        c.colour_from_pen(&pen);
-                    });
-                },
-                EraseMode::EntireDisplay | EraseMode::SavedLines => {
-                    let pen = *self.viewport.get_pen();
-                    let size = self.viewport.get_size();
-                    let cursor = self.viewport.get_cursor();
-                    let (line, status) = self.viewport.get_row_mut(cursor.y);
-                    line.iter_mut().for_each(|c| {
-                        c.character = ' ';
-                        c.colour_from_pen(&pen);
-                    });
-                    status.length = size.x;
-                    status.is_linebreak = true;
-                },
-            },
-            Vt100Command::ReplaceWithSpaces(total) => {
-                let pen = *self.viewport.get_pen();
-                let cursor = self.viewport.get_cursor();
-                let (line, _) = self.viewport.get_row_mut(cursor.y);
-                let region = &mut line[cursor.x..];
-                let total = (total as usize).min(region.len());
-                region[..total].iter_mut().for_each(|c| {
-                    c.character = ' ';
-                    c.colour_from_pen(&pen);
-                });
-            },
-            Vt100Command::InsertSpaces(total) => {
-                let pen = *self.viewport.get_pen();
-                let cursor = self.viewport.get_cursor();
-                let (line, status) = self.viewport.get_row_mut(cursor.y);
-                let region = &mut line[cursor.x..];
-                let total = (total as usize).min(region.len());
-                let shift = region.len()-total;
-                region.copy_within(0..shift, total);
-                region[..total].iter_mut().for_each(|c| {
-                    c.character = ' ';
-                    c.colour_from_pen(&pen);
-                });
-                status.length = (status.length+total).min(line.len());
-            },
-            Vt100Command::DeleteCharacters(total) => {
-                let cursor = self.viewport.get_cursor();
-                let (line, status) = self.viewport.get_row_mut(cursor.y);
-                let region = &mut line[(cursor.x+1)..];
-                let total = (total as usize).min(region.len());
-                region.copy_within(total.., 0);
-                status.length = status.length.saturating_sub(total);
-            },
-            Vt100Command::InsertLines(total) => {
-                self.viewport.insert_lines(total as usize); 
-            },
-            Vt100Command::DeleteLines(total) => {
-                self.viewport.delete_lines(total as usize); 
-            },
-            // cursor movement
-            Vt100Command::MoveCursorPositionViewport(pos) => {
-                // top left corner is (1,1)
-                let x = pos.x.saturating_sub(1) as usize;
-                let y = pos.y.saturating_sub(1) as usize;
-                self.viewport.set_cursor(Vector2::new(x,y));
-            },
-            Vt100Command::MoveCursorUp(total) => {
-                let mut cursor = self.viewport.get_cursor();
-                let total = total as usize;
-                cursor.y = cursor.y.saturating_sub(total);
-                self.viewport.set_cursor(cursor);
-            },
-            Vt100Command::MoveCursorDown(total) => {
-                let mut cursor = self.viewport.get_cursor();
-                cursor.y += total as usize;
-                self.viewport.set_cursor(cursor);
-            },
-            Vt100Command::MoveCursorRight(total) => {
-                let mut cursor = self.viewport.get_cursor();
-                cursor.x += total as usize;
-                self.viewport.set_cursor(cursor);
-            },
-            Vt100Command::MoveCursorLeft(total) => {
-                let mut cursor = self.viewport.get_cursor();
-                let total = total as usize;
-                cursor.x = cursor.x.saturating_sub(total);
-                self.viewport.set_cursor(cursor);
-            },
-            Vt100Command::MoveCursorReverseIndex => {
-                let mut cursor = self.viewport.get_cursor();
-                cursor.y = cursor.y.saturating_sub(1);
-                self.viewport.set_cursor(cursor);
-            },
-            Vt100Command::MoveCursorNextLine(total) => {
-                let mut cursor = self.viewport.get_cursor();
-                cursor.y = total.saturating_sub(1) as usize;
-                self.viewport.set_cursor(cursor);
-            },
-            Vt100Command::MoveCursorPreviousLine(total) => {
-                let mut cursor = self.viewport.get_cursor();
-                cursor.y = total.saturating_sub(1) as usize;
-                self.viewport.set_cursor(cursor);
-            },
-            Vt100Command::MoveCursorHorizontalAbsolute(total) => {
-                let mut cursor = self.viewport.get_cursor();
-                cursor.x = total.saturating_sub(1) as usize;
-                self.viewport.set_cursor(cursor);
-            },
-            Vt100Command::MoveCursorVerticalAbsolute(total) => {
-                let mut cursor = self.viewport.get_cursor();
-                cursor.y = total.saturating_sub(1) as usize;
-                self.viewport.set_cursor(cursor);
-            },
-            // viewport positioning
-            Vt100Command::ScrollUp(total) => {
-                for _ in 0..total {
-                    self.viewport.scroll_up();
-                }
-            },
-            Vt100Command::ScrollDown(total) => {
-                for _ in 0..total {
-                    self.viewport.scroll_down();
-                }
-            },
-            // cursor save/load
-            Vt100Command::SaveCursorToMemory => {
-                let cursor = self.viewport.get_cursor();
-                self.saved_cursor = Some(cursor);
-            },
-            Vt100Command::RestoreCursorFromMemory => {
-                match self.saved_cursor {
-                    Some(cursor) => self.viewport.set_cursor(cursor),
-                    None => log::warn!("[vt100] tried to restore nonexistent cursor from memory"),
-                }
-            },
-            // cursor status
-            Vt100Command::SetCursorBlinking(is_blink) => {
-                self.cursor_status.is_blinking = is_blink;
-            },
-            Vt100Command::SetCursorVisible(is_visible) => {
-                self.cursor_status.is_visible = is_visible;
-            },
-            _ => {
-                log::info!("[vt100] Unhandled: {:?}", c);
-            },
+    pub(crate) fn restore_cursor(&mut self) {
+        match self.saved_cursor {
+            Some(cursor) => self.viewport.set_cursor(cursor),
+            None => log::warn!("tried to restore nonexistent cursor from memory"),
         }
     }
 
-    fn on_error(&mut self, err: Vt100ParserError, parser: &Vt100Parser) {
-        log::error!("[vt100-error] {:?} {:?}", err, parser);
+    pub fn get_cursor_status(&self) -> &CursorStatus {
+        &self.cursor_status
+    }
+
+    pub(crate) fn get_cursor_status_mut(&mut self) -> &mut CursorStatus {
+        &mut self.cursor_status
     }
 }
-

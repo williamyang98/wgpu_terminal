@@ -1,4 +1,4 @@
-use vt100::misc::InputMode;
+use vt100::common::InputMode;
 use vt100::key_input::{
     ModifierKey, ArrowKey, FunctionKey,
     on_function_key,
@@ -14,7 +14,7 @@ pub struct TerminalKeyboard {
     modifier_key: ModifierKey,
     keypad_input_mode: InputMode,
     cursor_key_input_mode: InputMode,
-    write_pipe: Box<dyn Write>,
+    write_pipe: Box<dyn Write + Send>,
     utf8_decode_buffer: [u8;4],
 }
 
@@ -26,7 +26,7 @@ pub enum KeyCode {
 }
 
 impl TerminalKeyboard {
-    pub fn new(write_pipe: Box<dyn Write>) -> Self {
+    pub fn new(write_pipe: Box<dyn Write + Send>) -> Self {
         Self {
             is_bracketed_paste_mode: true,
             modifier_key: ModifierKey::None,
@@ -43,6 +43,10 @@ impl TerminalKeyboard {
 
     pub fn set_cursor_key_input_mode(&mut self, input_mode: InputMode) {
         self.cursor_key_input_mode = input_mode;
+    }
+
+    pub fn set_is_bracketed_paste_mode(&mut self, is_bracketed: bool) {
+        self.is_bracketed_paste_mode = is_bracketed;
     }
 
     pub fn paste_text(&mut self, text: &[u8]) {
@@ -84,11 +88,8 @@ impl TerminalKeyboard {
     }
 
     pub fn on_key_release(&mut self, key_code: KeyCode) {
-        match key_code {
-            KeyCode::ModifierKey(key) => {
-                self.modifier_key.remove(key);
-            },
-            _ => {},
+        if let KeyCode::ModifierKey(key) = key_code {
+            self.modifier_key.remove(key);
         }
     }
 }

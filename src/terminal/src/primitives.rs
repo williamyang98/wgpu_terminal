@@ -1,5 +1,5 @@
 use bitflags::bitflags;
-use vt100::graphic_style::Rgb8;
+use vt100::common::Rgb8;
 
 bitflags! {
     #[derive(Clone,Copy,Debug,Default)]
@@ -17,8 +17,6 @@ bitflags! {
     }
 }
 
-// pad to 16bytes so we can store them in circular scrollback buffer
-#[repr(C)]
 #[derive(Clone,Copy,Default,Debug)]
 pub struct Cell {
     pub character: char, // 4
@@ -34,10 +32,10 @@ pub struct Pen {
     pub style_flags: StyleFlags,
 }
 
-impl Cell {
-    pub fn colour_from_pen(&mut self, pen: &Pen) {
-        self.background_colour = pen.background_colour;
-        self.foreground_colour = pen.foreground_colour;
-        self.style_flags = pen.style_flags;
+impl Pen {
+    pub fn colour_in_cell(&self, cell: &mut Cell) {
+        cell.background_colour = self.background_colour;
+        cell.foreground_colour = self.foreground_colour;
+        cell.style_flags = self.style_flags;
     }
 }

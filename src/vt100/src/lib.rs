@@ -1,18 +1,15 @@
 pub mod parser;
 pub mod command;
-pub mod graphic_style;
-pub mod misc;
-pub mod screen_mode;
+pub mod common;
 pub mod key_input;
 
 #[cfg(test)]
 mod tests {
+    use cgmath::Vector2;
     use crate::{
         command::Command,
         parser::{Parser,ParserHandler,ParserError},
-        misc::{Vector2,EraseMode,ScrollRegion,CharacterSet,InputMode,KeyType,WindowAction,CursorStyle,BellVolume},
-        screen_mode::ScreenMode,
-        graphic_style::{GraphicStyle,Rgb8},
+        common::*,
     };
     use std::collections::HashMap;
 
@@ -45,7 +42,7 @@ mod tests {
         }
     }
 
-    fn test_valid_sequence<'a>(seq: &[u8], commands: &[Command]) {
+    fn test_valid_sequence(seq: &[u8], commands: &[Command]) {
         let mut parser = Parser::default(); 
         let mut handler = Handler::default();
         for (i,&b) in seq.iter().enumerate() {
@@ -65,21 +62,19 @@ mod tests {
                         handler,
                     );
                 }
-            } else {
-                if handler.commands.as_slice() != commands {
-                    panic!(
-                        "[error] Parser didnt get expected command at index {}\n  \
-                           Sequence: {:?} ({:?})\n  \
-                           Expected: {:?}\n  \
-                           Parser: {:?}\n  \
-                           Handler: {:?}",
-                        i, 
-                        seq, std::str::from_utf8(seq).unwrap_or(""),
-                        commands,
-                        parser,
-                        handler,
-                    );
-                }
+            } else if handler.commands.as_slice() != commands {
+                panic!(
+                    "[error] Parser didnt get expected command at index {}\n  \
+                       Sequence: {:?} ({:?})\n  \
+                       Expected: {:?}\n  \
+                       Parser: {:?}\n  \
+                       Handler: {:?}",
+                    i, 
+                    seq, std::str::from_utf8(seq).unwrap_or(""),
+                    commands,
+                    parser,
+                    handler,
+                );
             }
         }
     }
@@ -105,21 +100,19 @@ mod tests {
                         handler,
                     );
                 }
-            } else {
-                if parser.is_terminated() { 
-                    panic!(
-                        "[error] Parser ended early at index {}\n  \
-                           Sequence: {:?} ({:?})\n  \
-                           Expected: {:?}\n  \
-                           Parser: {:?}\n  \
-                           Handler: {:?}",
-                        i, 
-                        seq, std::str::from_utf8(seq).unwrap_or(""),
-                        errors, 
-                        parser,
-                        handler,
-                    );
-                }
+            } else if parser.is_terminated() { 
+                panic!(
+                    "[error] Parser ended early at index {}\n  \
+                       Sequence: {:?} ({:?})\n  \
+                       Expected: {:?}\n  \
+                       Parser: {:?}\n  \
+                       Handler: {:?}",
+                    i, 
+                    seq, std::str::from_utf8(seq).unwrap_or(""),
+                    errors, 
+                    parser,
+                    handler,
+                );
             }
         }
     }
@@ -181,8 +174,8 @@ mod tests {
 
     fn get_private_mode_nonstandard_commands() -> HashMap<(u16,bool), Vec<Command>> {
         HashMap::from([
-            ((   1, true) , vec![Command::SetCursorKeysMode(InputMode::Application)]),
-            ((   1, false), vec![Command::SetCursorKeysMode(InputMode::Numeric)]),
+            ((   1, true) , vec![Command::SetCursorKeyInputMode(InputMode::Application)]),
+            ((   1, false), vec![Command::SetCursorKeyInputMode(InputMode::Numeric)]),
             ((   3, true) , vec![Command::SetConsoleWidth(132)]),
             ((   3, false), vec![Command::SetConsoleWidth(80)]),
             ((   5, true) , vec![Command::SetLightBackground]),
@@ -282,7 +275,7 @@ mod tests {
     fn valid_set_screen_title() {
         let window_titles = ["", "hello world", "ĐđĒēĔĕĖėĘęĚěĜĝĞğ"];
         for window_title in &window_titles {
-            let command = Command::SetWindowTitle(window_title.to_string());
+            let command = Command::WindowAction(WindowAction::SetWindowTitle(window_title.to_string()));
             test_valid_sequence(format!("]0;{}\x07", window_title).as_bytes(), &[command.clone()]);
             test_valid_sequence(format!("]2;{}\x07", window_title).as_bytes(), &[command.clone()]);
         }
@@ -498,8 +491,8 @@ mod tests {
 
     #[test]
     fn valid_test_window_action() {
-        test_valid_sequence(b"[1t", &[Command::WindowAction(WindowAction::Iconify(false))]);
-        test_valid_sequence(b"[2t", &[Command::WindowAction(WindowAction::Iconify(true))]);
+        test_valid_sequence(b"[1t", &[Command::WindowAction(WindowAction::SetMinimised(false))]);
+        test_valid_sequence(b"[2t", &[Command::WindowAction(WindowAction::SetMinimised(true))]);
         test_valid_sequence(b"[5t", &[Command::WindowAction(WindowAction::SendToFront)]);
         test_valid_sequence(b"[6t", &[Command::WindowAction(WindowAction::SendToBack)]);
         test_valid_sequence(b"[7t", &[Command::WindowAction(WindowAction::Refresh)]);
@@ -510,17 +503,17 @@ mod tests {
         test_valid_sequence(b"[10;0t", &[Command::WindowAction(WindowAction::SetFullscreen(false))]);
         test_valid_sequence(b"[10;1t", &[Command::WindowAction(WindowAction::SetFullscreen(true))]);
         test_valid_sequence(b"[10;2t", &[Command::WindowAction(WindowAction::ToggleFullscreen)]);
-        test_valid_sequence(b"[11t", &[Command::WindowAction(WindowAction::ReportWindowState)]);
-        test_valid_sequence(b"[13t", &[Command::WindowAction(WindowAction::ReportWindowPosition)]);
-        test_valid_sequence(b"[13;2t", &[Command::WindowAction(WindowAction::ReportTextAreaPosition)]);
-        test_valid_sequence(b"[14t", &[Command::WindowAction(WindowAction::ReportTextAreaSize)]);
-        test_valid_sequence(b"[14;2t", &[Command::WindowAction(WindowAction::ReportWindowSize)]);
-        test_valid_sequence(b"[15t", &[Command::WindowAction(WindowAction::ReportScreenSize)]);
-        test_valid_sequence(b"[16t", &[Command::WindowAction(WindowAction::ReportCellSize)]);
-        test_valid_sequence(b"[18t", &[Command::WindowAction(WindowAction::ReportTextAreaGridSize)]);
-        test_valid_sequence(b"[19t", &[Command::WindowAction(WindowAction::ReportScreenGridSize)]);
-        test_valid_sequence(b"[20t", &[Command::WindowAction(WindowAction::ReportWindowIconLabel)]);
-        test_valid_sequence(b"[21t", &[Command::WindowAction(WindowAction::ReportWindowTitle)]);
+        test_valid_sequence(b"[11t", &[Command::WindowAction(WindowAction::GetWindowState)]);
+        test_valid_sequence(b"[13t", &[Command::WindowAction(WindowAction::GetWindowPosition)]);
+        test_valid_sequence(b"[13;2t", &[Command::WindowAction(WindowAction::GetTextAreaPosition)]);
+        test_valid_sequence(b"[14t", &[Command::WindowAction(WindowAction::GetTextAreaSize)]);
+        test_valid_sequence(b"[14;2t", &[Command::WindowAction(WindowAction::GetWindowSize)]);
+        test_valid_sequence(b"[15t", &[Command::WindowAction(WindowAction::GetScreenSize)]);
+        test_valid_sequence(b"[16t", &[Command::WindowAction(WindowAction::GetCellSize)]);
+        test_valid_sequence(b"[18t", &[Command::WindowAction(WindowAction::GetTextAreaGridSize)]);
+        test_valid_sequence(b"[19t", &[Command::WindowAction(WindowAction::GetScreenGridSize)]);
+        test_valid_sequence(b"[20t", &[Command::WindowAction(WindowAction::GetWindowIconLabel)]);
+        test_valid_sequence(b"[21t", &[Command::WindowAction(WindowAction::GetWindowTitle)]);
         test_valid_sequence(b"[22;0t", &[Command::WindowAction(WindowAction::SaveIconTitle(None)), Command::WindowAction(WindowAction::SaveWindowTitle(None))]);
         test_valid_sequence(b"[22;1t", &[Command::WindowAction(WindowAction::SaveIconTitle(None))]);
         test_valid_sequence(b"[22;2t", &[Command::WindowAction(WindowAction::SaveWindowTitle(None))]);
@@ -594,7 +587,7 @@ mod tests {
         let mut errors = Vec::new();
         for code in codes {
             if GraphicStyle::try_from_u16(code).is_none() {
-                if numbers_string.len() > 0 {
+                if !numbers_string.is_empty() {
                     numbers_string.push(';');
                 }
                 numbers_string.extend(format!("{}", code).chars());

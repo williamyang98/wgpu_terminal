@@ -1,9 +1,10 @@
 use clap::Parser;
-use cgmath::Vector2;
-use terminal::terminal::Terminal;
+
+
+use terminal::terminal_process::TerminalProcess;
+
 use terminal_process::*;
-use std::io::Write;
-use wgpu_terminal::terminal_window::TerminalWindow;
+use wgpu_terminal::app::{AppBuilder, start_app, start_headless};
 
 #[derive(Clone,Copy,Debug,Default,clap::ValueEnum)]
 enum Mode {
@@ -72,8 +73,7 @@ fn start_conpty(args: &Args) -> anyhow::Result<()> {
     command.stderr(std::process::Stdio::piped());
     let process = conpty::Process::spawn(command)?;
     let process = Box::new(ConptyProcess::new(process));
-    let terminal = Terminal::new(process);
-    start_terminal(args.clone(), terminal)?;
+    start_terminal(args.clone(), process)?;
     Ok(())
 }
 
@@ -85,55 +85,19 @@ fn start_raw_shell(args: &Args) -> anyhow::Result<()> {
     command.stderr(std::process::Stdio::null());
     let process = command.spawn()?;
     let process = Box::new(RawProcess::new(process));
-    let terminal = Terminal::new(process);
-    start_terminal(args.clone(), terminal)?;
+    start_terminal(args.clone(), process)?;
     Ok(())
 }
 
-fn start_terminal(args: Args, terminal: Terminal) -> anyhow::Result<()> {
+fn start_terminal(args: Args, process: Box<dyn TerminalProcess>) -> anyhow::Result<()> {
+    let builder = AppBuilder {
+        font_filename: args.font_filename.to_owned(),
+        font_size: args.font_size,
+        process,
+    };
     if args.headless {
-        start_headless(args, terminal)
+        start_headless(builder)
     } else {
-        start_render_thread(args, terminal)
+        start_app(builder)
     }
-}
-
-fn start_render_thread(args: Args, terminal: Terminal) -> anyhow::Result<()> {
-    let event_loop = winit::event_loop::EventLoop::new()?;
-    let window = winit::window::WindowBuilder::new().build(&event_loop)?;
-    let mut window_size = window.inner_size();
-    window_size.width = window_size.width.max(1);
-    window_size.height = window_size.height.max(1);
-    let mut terminal_window = pollster::block_on(TerminalWindow::new(
-        &window,
-        terminal,
-        args.font_filename.to_owned(), args.font_size,
-    ))?;
-    event_loop.run(move |event, target| {
-        terminal_window.on_winit_event(event, target);
-    })?;
-    Ok(())
-}
-
-fn start_headless(_args: Args, mut terminal: Terminal) -> anyhow::Result<()> {
-    terminal.set_size(Vector2::new(100,32));
-    terminal.wait();
-    if !terminal.try_render() {
-        log::error!("Failed to render terminal after closing");
-    }
-    let renderer = terminal.get_renderer();
-    let size = renderer.get_size();
-    let cells = renderer.get_cells();
-    let mut tmp_buf = [0u8; 4];
-    let mut stdout = std::io::stdout();
-    for y in 0..size.y {
-        let index = y*size.x;
-        let row = &cells[index..(index+size.x)];
-        for cell in row {
-            let data = cell.character.encode_utf8(&mut tmp_buf);
-            let _ = stdout.write(data.as_bytes());
-        }
-        let _ = stdout.write(b"\n");
-    }
-    Ok(())
 }

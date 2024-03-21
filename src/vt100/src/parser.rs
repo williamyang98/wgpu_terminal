@@ -1,13 +1,21 @@
 // Sources: https://github.com/0x5c/VT100-Examples/blob/master/vt_seq.md
 //          https://gist.github.com/fnky/458719343aabd01cfb17a3a4f7296797
 //          https://invisible-island.net/xterm/ctlseqs/ctlseqs.html#h3-Functions-using-CSI-_-ordered-by-the-final-character_s_
-use std::fmt;
 use std::string::FromUtf8Error;
-use crate::{
-    command::Command,
-    graphic_style::{GraphicStyle,Rgb8},
-    misc::{EraseMode,Vector2,ScrollRegion,CharacterSet,InputMode,KeyType,WindowAction,CursorStyle,BellVolume},
-    screen_mode::{ScreenMode},
+use cgmath::Vector2;
+use crate::command::Command;
+use crate::common::{
+    BellVolume,
+    CharacterSet,
+    CursorStyle,
+    EraseMode,
+    GraphicStyle,
+    InputMode,
+    KeyType,
+    Rgb8,
+    ScreenMode,
+    ScrollRegion,
+    WindowAction,
 };
 
 pub const VT100_ESCAPE_CODE: u8 = 0x1B;
@@ -343,8 +351,8 @@ impl Parser {
         for i in 0..total_numbers {
             let n = self.numbers[i];
             match (n, b) {
-                (   1, b'h') => self.on_success(h, Command::SetCursorKeysMode(InputMode::Application)),
-                (   1, b'l') => self.on_success(h, Command::SetCursorKeysMode(InputMode::Numeric)),
+                (   1, b'h') => self.on_success(h, Command::SetCursorKeyInputMode(InputMode::Application)),
+                (   1, b'l') => self.on_success(h, Command::SetCursorKeyInputMode(InputMode::Numeric)),
                 (   3, b'h') => self.on_success(h, Command::SetConsoleWidth(132)),
                 (   3, b'l') => self.on_success(h, Command::SetConsoleWidth(80)),
                 (   5, b'h') => self.on_success(h, Command::SetLightBackground),
@@ -483,7 +491,7 @@ impl Parser {
         let data = &self.buffer[i_start..i_end];
         match n {
             0 | 2 => match String::from_utf8(data.to_vec()) {
-                Ok(title) => self.on_success(h, Command::SetWindowTitle(title)),
+                Ok(title) => self.on_success(h, Command::WindowAction(WindowAction::SetWindowTitle(title))),
                 Err(error) => self.on_error(h, ParserError::InvalidUtf8String(error)),
             },
             8 => match String::from_utf8(data.to_vec()) {
@@ -617,8 +625,8 @@ impl Parser {
             return;
         };
         match code {
-            1 => self.on_success(h, Command::WindowAction(WindowAction::Iconify(false))),
-            2 => self.on_success(h, Command::WindowAction(WindowAction::Iconify(true))),
+            1 => self.on_success(h, Command::WindowAction(WindowAction::SetMinimised(false))),
+            2 => self.on_success(h, Command::WindowAction(WindowAction::SetMinimised(true))),
             3 => match self.try_get_numbers(3) {
                 Err(err) => self.on_error(h, err),
                 Ok(v) => self.on_success(h, Command::WindowAction(WindowAction::Move(Vector2::new(v[1],v[2])))),
@@ -649,23 +657,23 @@ impl Parser {
                 Some(2) => self.on_success(h, Command::WindowAction(WindowAction::ToggleFullscreen)),
                 _ => self.on_error(h, ParserError::Unhandled),
             },
-            11 => self.on_success(h, Command::WindowAction(WindowAction::ReportWindowState)),
+            11 => self.on_success(h, Command::WindowAction(WindowAction::GetWindowState)),
             13 => match self.numbers.get(1).copied() {
-                None => self.on_success(h, Command::WindowAction(WindowAction::ReportWindowPosition)),
-                Some(2) => self.on_success(h, Command::WindowAction(WindowAction::ReportTextAreaPosition)),
+                None => self.on_success(h, Command::WindowAction(WindowAction::GetWindowPosition)),
+                Some(2) => self.on_success(h, Command::WindowAction(WindowAction::GetTextAreaPosition)),
                 _ => self.on_error(h, ParserError::Unhandled),
             },
             14 => match self.numbers.get(1).copied() {
-                None => self.on_success(h, Command::WindowAction(WindowAction::ReportTextAreaSize)),
-                Some(2) => self.on_success(h, Command::WindowAction(WindowAction::ReportWindowSize)),
+                None => self.on_success(h, Command::WindowAction(WindowAction::GetTextAreaSize)),
+                Some(2) => self.on_success(h, Command::WindowAction(WindowAction::GetWindowSize)),
                 _ => self.on_error(h, ParserError::Unhandled),
             },
-            15 => self.on_success(h, Command::WindowAction(WindowAction::ReportScreenSize)),
-            16 => self.on_success(h, Command::WindowAction(WindowAction::ReportCellSize)),
-            18 => self.on_success(h, Command::WindowAction(WindowAction::ReportTextAreaGridSize)),
-            19 => self.on_success(h, Command::WindowAction(WindowAction::ReportScreenGridSize)),
-            20 => self.on_success(h, Command::WindowAction(WindowAction::ReportWindowIconLabel)),
-            21 => self.on_success(h, Command::WindowAction(WindowAction::ReportWindowTitle)),
+            15 => self.on_success(h, Command::WindowAction(WindowAction::GetScreenSize)),
+            16 => self.on_success(h, Command::WindowAction(WindowAction::GetCellSize)),
+            18 => self.on_success(h, Command::WindowAction(WindowAction::GetTextAreaGridSize)),
+            19 => self.on_success(h, Command::WindowAction(WindowAction::GetScreenGridSize)),
+            20 => self.on_success(h, Command::WindowAction(WindowAction::GetWindowIconLabel)),
+            21 => self.on_success(h, Command::WindowAction(WindowAction::GetWindowTitle)),
             22 => match self.numbers.get(1).copied() {
                 None => self.on_error(h, ParserError::MissingNumbers { given: self.numbers.len(), expected: 2 }),
                 Some(0) => {
@@ -735,8 +743,8 @@ impl Parser {
     }
 }
 
-impl fmt::Debug for Parser {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl std::fmt::Debug for Parser {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut res = f.debug_struct("Vt100Parser");
         res.field("state", &self.state);
         res.field("context", &self.context);

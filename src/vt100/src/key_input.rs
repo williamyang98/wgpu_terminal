@@ -1,4 +1,4 @@
-use crate::misc::InputMode;
+use crate::common::InputMode;
 use bitflags::bitflags;
 
 bitflags! {
@@ -11,6 +11,7 @@ bitflags! {
         const _ = 0u8;
     }
 }
+
 
 // Source: https://vt100.net/docs/vt100-ug/chapter3.html
 // https://invisible-island.net/xterm/ctlseqs/ctlseqs.html

@@ -1,7 +1,16 @@
-use crate::{
-    misc::{Vector2,EraseMode,ScrollRegion,CharacterSet,InputMode,KeyType,WindowAction,CursorStyle,BellVolume},
-    graphic_style::{GraphicStyle,Rgb8},
-    screen_mode::{ScreenMode},
+use cgmath::Vector2;
+use crate::common::{
+    BellVolume,
+    CharacterSet,
+    CursorStyle,
+    EraseMode,
+    GraphicStyle,
+    InputMode,
+    KeyType,
+    Rgb8,
+    ScreenMode,
+    ScrollRegion,
+    WindowAction,
 };
 
 #[derive(Clone,Debug,PartialEq)]
@@ -53,10 +62,9 @@ pub enum Command {
     // scrolling margins
     SetScrollRegion(Option<ScrollRegion>),
     // operating system command 
-    SetWindowTitle(String),
     SetHyperlink(String),
     // common private modes
-    SetCursorKeysMode(InputMode),
+    SetCursorKeyInputMode(InputMode),
     SetConsoleWidth(u16),
     SetLightBackground,
     SetDarkBackground,

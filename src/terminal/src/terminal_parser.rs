@@ -2,10 +2,14 @@ use crate::utf8_parser::{
     Parser as Utf8Parser,
     ParserError as Utf8ParserError,
 };
-use vt100::parser::{
-    Parser as Vt100Parser, 
-    ParserHandler as Vt100ParserHandler,
-    VT100_ESCAPE_CODE,
+use vt100::{
+    command::Command as Vt100Command,
+    parser::{
+        Parser as Vt100Parser, 
+        ParserHandler as Vt100ParserHandler,
+        ParserError as Vt100ParserError,
+        VT100_ESCAPE_CODE,
+    },
 };
 
 enum State {
@@ -35,12 +39,22 @@ pub trait TerminalParserHandler {
     fn on_ascii_data(&mut self, buf: &[u8]);
     fn on_utf8(&mut self, character: char);
     fn on_utf8_error(&mut self, error: &Utf8ParserError);
+    fn on_vt100(&mut self, command: Vt100Command);
+    fn on_vt100_error(&mut self, error: Vt100ParserError, parser: &Vt100Parser);
+}
+
+struct ConvertToVt100<'a, T: TerminalParserHandler>(&'a mut T);
+impl<T: TerminalParserHandler> Vt100ParserHandler for ConvertToVt100<'_, T> {
+    fn on_command(&mut self, command: Vt100Command) {
+        self.0.on_vt100(command);
+    }
+    fn on_error(&mut self, error: Vt100ParserError, parser: &Vt100Parser) {
+        self.0.on_vt100_error(error, parser);
+    }
 }
 
 impl TerminalParser {
-    pub fn parse_bytes<T>(&mut self, mut buf: &[u8], handler: &mut T) 
-    where T: TerminalParserHandler + Vt100ParserHandler
-    {
+    pub fn parse_bytes(&mut self, mut buf: &[u8], handler: &mut impl TerminalParserHandler) {
         while !buf.is_empty() {
             match self.state {
                 State::Byte => {
@@ -94,7 +108,7 @@ impl TerminalParser {
                     let mut total_read = 0;
                     for &b in buf {
                         total_read += 1;
-                        self.vt100_parser.feed_byte(b, handler);
+                        self.vt100_parser.feed_byte(b, &mut ConvertToVt100(handler));
                         if self.vt100_parser.is_terminated() {
                             self.state = State::Byte;
                             break;

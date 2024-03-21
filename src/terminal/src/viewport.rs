@@ -1,5 +1,5 @@
 use crate::{
-    primitives::{Cell,Pen},
+    primitives::Cell,
     scrollback_buffer::ScrollbackBuffer,
 };
 use cgmath::Vector2;
@@ -15,13 +15,11 @@ pub struct Viewport {
     cursor: Vector2<usize>,
     size: Vector2<usize>,
     row_offset: usize,
-    pen: Pen,
     cells: Vec<Cell>,
     row_status: Vec<LineStatus>,
     resize_cells: Vec<Cell>,
     resize_row_status: Vec<LineStatus>,
     scrollback_buffer: ScrollbackBuffer, // eject lines into scrollback buffer
-    is_newline_carriage_return: bool, // if true then \n will also set cursor.x = 0
 }
 
 pub const DEFAULT_VIEWPORT_SIZE: Vector2<usize> = Vector2::new(128,128);
@@ -33,13 +31,11 @@ impl Default for Viewport {
             cursor: Vector2::new(0,0),
             size: DEFAULT_VIEWPORT_SIZE,
             row_offset: 0,
-            pen: Pen::default(),
             cells: vec![Cell::default(); total_cells],
             row_status: vec![LineStatus::default(); DEFAULT_VIEWPORT_SIZE.y],
             resize_cells: vec![Cell::default(); total_cells],
             resize_row_status: vec![LineStatus::default(); DEFAULT_VIEWPORT_SIZE.y],
             scrollback_buffer: ScrollbackBuffer::default(),
-            is_newline_carriage_return: false,
         }
     }
 }
@@ -49,10 +45,6 @@ impl Viewport {
         &self.scrollback_buffer
     }
  
-    pub fn set_is_newline_carriage_return(&mut self, v: bool) {
-        self.is_newline_carriage_return = v;
-    }
-
     pub fn set_size(&mut self, new_size: Vector2<usize>) {
         assert!(new_size.x > 0);
         assert!(new_size.y > 0);
@@ -91,7 +83,7 @@ impl Viewport {
                 self.write_cell(&cell);
             }
             if line.is_linebreak {
-                self.next_line_cursor(true);
+                self.feed_newline(true);
                 self.cursor.x = 0;
             }
         }
@@ -133,41 +125,8 @@ impl Viewport {
         (line, &mut self.row_status[row])
     }
  
-    pub fn get_pen(&self) -> &Pen {
-        &self.pen
-    }
-
-    pub fn get_pen_mut(&mut self) -> &mut Pen {
-        &mut self.pen
-    }
-
-    pub fn write_ascii(&mut self, b: u8) {
-        match b {
-            b'\n' => {
-                self.next_line_cursor(true);
-                if self.is_newline_carriage_return {
-                    self.cursor.x = 0;
-                }
-            }, 
-            b'\x0a' => self.next_line_cursor(true), // raw linefeed
-            b'\r' => { self.cursor.x = 0; },
-            b'\x08' => { self.cursor.x = self.cursor.x.max(1) - 1; },
-            b' '..=b'~' => { self.write_utf8(b as char); },
-            b'\x07' => { log::info!("Ding ding ding (BELL)"); },
-            b => { log::error!("Unhandled byte: {}", b); },
-        }
-    }
-
-    pub fn write_utf8(&mut self, character: char) {
-        let mut cell = Cell {
-            character,
-            ..Cell::default()
-        };
-        cell.colour_from_pen(&self.pen);
-        self.write_cell(&cell);
-    }
-
-    fn write_cell(&mut self, cell: &Cell) {
+    #[inline]
+    pub fn write_cell(&mut self, cell: &Cell) {
         self.wrap_cursor();
         let row = self.get_current_row_index();
         let line_status = &mut self.row_status[row];
@@ -177,16 +136,13 @@ impl Viewport {
         self.cursor.x += 1;
     }
 
-    fn wrap_cursor(&mut self) {
-        assert!(self.cursor.x <= self.size.x);
-        if self.cursor.x == self.size.x {
-            let is_linebreak = false;
-            self.next_line_cursor(is_linebreak);
-            self.cursor.x = 0;
-        }
+    #[inline]
+    pub fn carriage_return(&mut self) {
+        self.cursor.x = 0;
     }
 
-    fn next_line_cursor(&mut self, is_linebreak: bool) {
+    #[inline]
+    pub fn feed_newline(&mut self, is_linebreak: bool) {
         assert!(self.cursor.y < self.size.y);
         assert!(self.row_offset < self.size.y);
         {
@@ -204,12 +160,49 @@ impl Viewport {
         }
     }
 
+    #[inline]
+    fn wrap_cursor(&mut self) {
+        assert!(self.cursor.x <= self.size.x);
+        if self.cursor.x == self.size.x {
+            self.feed_newline(false);
+            self.cursor.x = 0;
+        }
+    }
+
+    #[inline]
     fn get_row_index(&self, row: usize) -> usize {
         (self.row_offset + row) % self.size.y
     }
 
+    #[inline]
     fn get_current_row_index(&self) -> usize {
         (self.row_offset + self.cursor.y) % self.size.y
+    }
+
+    pub(crate) fn copy_lines_within(&mut self, src: usize, dst: usize, total: usize) {
+        assert!(src < self.size.y);
+        assert!(dst < self.size.y);
+        let max_lines_to_copy = self.size.y - src.min(dst);
+        assert!(total <= max_lines_to_copy);
+        // copy backwards or forwards to avoid overriding lines in src range
+        use std::cmp::Ordering;
+        match src.cmp(&dst) {
+            Ordering::Less => (0..total).rev().for_each(|i| self.copy_line_within(src+i, dst+i)),
+            Ordering::Greater => (0..total).for_each(|i| self.copy_line_within(src+i, dst+i)),
+            Ordering::Equal => {},
+        }
+    }
+
+    pub(crate) fn copy_line_within(&mut self, src: usize, dst: usize) {
+        assert!(src < self.size.y);
+        assert!(dst < self.size.y);
+        let row_src = self.get_row_index(src);
+        let row_dst = self.get_row_index(dst);
+        let index_src = row_src*self.size.x;
+        let index_dst = row_dst*self.size.x;
+        let slice_src = index_src..(index_src+self.size.x);
+        self.cells.as_mut_slice().copy_within(slice_src, index_dst);
+        self.row_status[row_dst] = self.row_status[row_src];
     }
 
     fn eject_oldest_line_into_scrollbuffer(&mut self) {
@@ -224,88 +217,5 @@ impl Viewport {
         line.fill(Cell::default());
         *line_status = LineStatus::default();
         self.row_offset = (self.row_offset+1) % self.size.y;
-    }
- 
-    pub fn scroll_up(&mut self) {
-        self.eject_oldest_line_into_scrollbuffer();
-    }
-
-    pub fn scroll_down(&mut self) {
-        // move lines down and fill with nothing
-        self.row_offset = (self.row_offset+self.size.y-1) % self.size.y;
-        let clear_row = self.row_offset;
-        let index = self.size.x*clear_row;
-        let line = &mut self.cells[index..(index+self.size.x)];
-        let line_status = &mut self.row_status[clear_row];
-        line.fill(Cell::default());
-        *line_status = LineStatus {
-            is_linebreak: true,
-            ..LineStatus::default()
-        };
-    }
-
-    pub fn insert_lines(&mut self, total: usize) {
-        // cursor is 0 <= x <= Nx, 0 <= y < Ny
-        let max_rows = self.size.y - self.cursor.y;
-        let total = total.min(max_rows);
-        let shift = max_rows-total;
-        // shift rows downwards
-        for i in (0..shift).rev() {
-            let src_row = i;
-            let dst_row = i + total;
-            let src_row_index = (self.row_offset + self.cursor.y + src_row) % self.size.y;
-            let dst_row_index = (self.row_offset + self.cursor.y + dst_row) % self.size.y;
-            self.row_status[dst_row_index] = self.row_status[src_row_index]; 
-            let src_cell_offset = src_row_index*self.size.x;
-            let dst_cell_offset = dst_row_index*self.size.x;
-            for col in 0..self.size.x {
-                let dst_cell_index = dst_cell_offset + col;
-                let src_cell_index = src_cell_offset + col;
-                self.cells[dst_cell_index] = self.cells[src_cell_index];
-            }
-        }
-        for i in 0..total {
-            let row = (self.row_offset + self.cursor.y + i) % self.size.y;
-            self.row_status[row] = LineStatus {
-                is_linebreak: true,
-                ..LineStatus::default()
-            };
-            let cell_offset = row*self.size.x;
-            let row = &mut self.cells[cell_offset..(cell_offset+self.size.x)];
-            row.fill(Cell::default());
-        }
-    }
-
-    pub fn delete_lines(&mut self, total: usize) {
-        // cursor is 0 <= x <= Nx, 0 <= y < Ny
-        let max_rows = self.size.y - self.cursor.y;
-        let total = total.min(max_rows);
-        let shift = max_rows-total;
-        // shift rows upwards
-        for i in 0..shift {
-            let src_row = i + total;
-            let dst_row = i;
-            let src_row_index = (self.row_offset + self.cursor.y + src_row) % self.size.y;
-            let dst_row_index = (self.row_offset + self.cursor.y + dst_row) % self.size.y;
-            self.row_status[dst_row_index] = self.row_status[src_row_index]; 
-            let src_cell_offset = src_row_index*self.size.x;
-            let dst_cell_offset = dst_row_index*self.size.x;
-            for col in 0..self.size.x {
-                let dst_cell_index = dst_cell_offset + col;
-                let src_cell_index = src_cell_offset + col;
-                self.cells[dst_cell_index] = self.cells[src_cell_index];
-            }
-        }
-        for i in 0..total {
-            let j = i + shift;
-            let row = (self.row_offset + self.cursor.y + j) % self.size.y;
-            self.row_status[row] = LineStatus {
-                is_linebreak: false,
-                ..LineStatus::default()
-            };
-            let cell_offset = row*self.size.x;
-            let row = &mut self.cells[cell_offset..(cell_offset+self.size.x)];
-            row.fill(Cell::default());
-        }
     }
 }

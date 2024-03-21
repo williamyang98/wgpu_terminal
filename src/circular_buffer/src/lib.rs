@@ -108,12 +108,12 @@ mod test {
         for (i, b) in &mut buffer[(size-offset)..(size-offset+write_amount)].iter_mut().enumerate() {
             *b = i as u8;
         }
-        let is_all_equal = (&buffer[(size-offset)..size])
+        let is_all_equal = buffer[(size-offset)..size]
             .iter()
             .enumerate()
             .all(|(i,b)| *b == i as u8);
         assert!(is_all_equal);
-        let is_all_equal = (&buffer[..(write_amount-offset)])
+        let is_all_equal = buffer[..(write_amount-offset)]
             .iter()
             .enumerate()
             .all(|(i,b)| *b == ((i + offset) as u8));
@@ -150,7 +150,7 @@ mod test {
         for (i,b) in &mut buffer[..(write_amount-offset)].iter_mut().enumerate() {
             *b = (i + offset) as u8;
         }
-        let is_all_equal = (&mut buffer[(size-offset)..(size-offset+write_amount)])
+        let is_all_equal = buffer[(size-offset)..(size-offset+write_amount)]
             .iter_mut()
             .enumerate()
             .all(|(i,b)| *b == i as u8);

@@ -36,13 +36,13 @@ impl TerminalRenderer {
         self.cells.as_slice()
     }
 
-    pub(crate) fn set_size(&mut self, size: Vector2<usize>) {
+    pub fn set_size(&mut self, size: Vector2<usize>) {
         let total_cells = size.x*size.y;
         self.size = size;
         self.cells.resize(total_cells, Cell::default());
     }
 
-    pub(crate) fn render_viewport(&mut self, viewport: &Viewport) {
+    pub fn render_viewport(&mut self, viewport: &Viewport) {
         let scrollback_buffer = viewport.get_scrollback_buffer();
         let scrollback_buffer_lines = scrollback_buffer.get_lines();
         let size = viewport.get_size();

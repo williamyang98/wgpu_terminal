@@ -6,17 +6,23 @@ use tile_renderer::{
     FontdueGlyphGenerator,
     CellData,
 };
-use terminal::terminal::Terminal;
+use terminal::{
+    terminal::Terminal,
+    terminal_renderer::TerminalRenderer,
+};
 use winit::{
     event::{Event, WindowEvent, ElementState},
     keyboard::{KeyCode,PhysicalKey,Key},
     event_loop::EventLoopWindowTarget,
     window::Window,
 };
+use crate::app_events::AppEvent;
 use crate::frame_counter::FrameCounter;
+use vt100::common::WindowAction;
 
-pub struct TerminalWindow<'a> {
+pub struct AppWindow<'a> {
     terminal: Terminal, 
+    terminal_renderer: TerminalRenderer,
     glyph_grid: Vec<CellData>,
     glyph_cache: GlyphCache,
     winit_window: &'a Window,
@@ -29,7 +35,7 @@ pub struct TerminalWindow<'a> {
     frame_counter: FrameCounter,
 }
 
-impl<'a> TerminalWindow<'a> {
+impl<'a> AppWindow<'a> {
     pub async fn new(
         winit_window: &'a Window,
         terminal: Terminal, 
@@ -85,6 +91,7 @@ impl<'a> TerminalWindow<'a> {
 
         Ok(Self {
             terminal,
+            terminal_renderer: TerminalRenderer::default(),
             glyph_grid: Vec::new(),
             glyph_cache,
             winit_window,
@@ -99,9 +106,9 @@ impl<'a> TerminalWindow<'a> {
     }
 
     pub fn on_winit_event(
-        &mut self, event: Event<()>, target: &EventLoopWindowTarget<()>) {
-        if let Event::WindowEvent { event, .. } = event {
-            match event {
+        &mut self, event: Event<AppEvent>, target: &EventLoopWindowTarget<AppEvent>) {
+        match event {
+            Event::WindowEvent { event, .. } => match event {
                 WindowEvent::CloseRequested => target.exit(),
                 WindowEvent::MouseWheel { delta, .. } => self.on_mouse_wheel(delta),
                 WindowEvent::KeyboardInput { event, .. } => self.on_keyboard_input(event),
@@ -113,27 +120,43 @@ impl<'a> TerminalWindow<'a> {
                     self.on_redraw_requested();
                     self.winit_window.request_redraw();
                 },
-                _ => {},
+                _ => {
+                    // log::info!("Unhandled: {:?}", event);
+                },
+            },
+            Event::UserEvent(event) => match event {
+                AppEvent::WindowAction(action) => self.on_window_action(action),
+            },
+            _ => {
+                // log::info!("Unhandled: {:?}", event);
+            },
+        }
+    }
+
+    fn on_window_action(&mut self, action: WindowAction) {
+        match action {
+            WindowAction::SetWindowTitle(title) => self.winit_window.set_title(title.as_str()),
+            _ => {
+                log::info!("Unhandled: {:?}", action);
             }
         }
     }
 
     fn on_mouse_wheel(&mut self, delta: winit::event::MouseScrollDelta) {
         use winit::event::MouseScrollDelta as Delta;
-        let renderer = self.terminal.get_renderer_mut();
         match delta {
             Delta::LineDelta(_x, y) => {
                 if y > 0.0 {
-                    renderer.scroll_up(1);
+                    self.terminal_renderer.scroll_up(1);
                 } else {
-                    renderer.scroll_down(1);
+                    self.terminal_renderer.scroll_down(1);
                 }
             },
             Delta::PixelDelta(delta) => {
                 if delta.y > 0.0 {
-                    renderer.scroll_up(1);
+                    self.terminal_renderer.scroll_up(1);
                 } else {
-                    renderer.scroll_down(1);
+                    self.terminal_renderer.scroll_down(1);
                 }
             },
         }
@@ -153,6 +176,7 @@ impl<'a> TerminalWindow<'a> {
         // update gpu
         self.renderer.update_render_scale(&self.wgpu_queue, new_render_scale);
         self.terminal.set_size(new_grid_size);
+        self.terminal_renderer.set_size(new_grid_size);
         self.winit_window.request_redraw();
     }
 
@@ -171,13 +195,11 @@ impl<'a> TerminalWindow<'a> {
     fn update_grid_from_terminal(&mut self) {
         self.current_frame += 1;
         self.frame_counter.update();
-        if !self.terminal.try_render() {
-            return;
-        }
+        let display = self.terminal.get_display();
+        self.terminal_renderer.render_viewport(display.get_viewport());
  
-        let renderer = self.terminal.get_renderer();
-        let size = renderer.get_size();
-        let cells = renderer.get_cells();
+        let size = self.terminal_renderer.get_size();
+        let cells = self.terminal_renderer.get_cells();
         let glyph_atlas = self.glyph_cache.get_glyph_atlas();
         let total_glyphs_in_block = glyph_atlas.get_total_glyphs_in_block();
         self.glyph_grid.resize(size.x*size.y, CellData::default());
@@ -212,7 +234,7 @@ impl<'a> TerminalWindow<'a> {
         use vt100::key_input::{ModifierKey, ArrowKey, FunctionKey};
         // modifier keys listen to press/release
         if let PhysicalKey::Code(code) = event.physical_key {
-            let keyboard = self.terminal.get_keyboard_mut();
+            let mut keyboard = self.terminal.get_keyboard();
             match event.state {
                 ElementState::Pressed => match code {
                     KeyCode::AltLeft      => return keyboard.on_key_press(TKey::ModifierKey(ModifierKey::Alt)),
@@ -240,7 +262,7 @@ impl<'a> TerminalWindow<'a> {
         }
 
         if let PhysicalKey::Code(code) = event.physical_key {
-            let keyboard = self.terminal.get_keyboard_mut();
+            let mut keyboard = self.terminal.get_keyboard();
             match code {
                 KeyCode::ArrowUp    => return keyboard.on_key_press(TKey::ArrowKey(ArrowKey::Up)),
                 KeyCode::ArrowDown  => return keyboard.on_key_press(TKey::ArrowKey(ArrowKey::Down)),
@@ -251,7 +273,7 @@ impl<'a> TerminalWindow<'a> {
         }
 
         if let PhysicalKey::Code(code) = event.physical_key {
-            let keyboard = self.terminal.get_keyboard_mut();
+            let mut keyboard = self.terminal.get_keyboard();
             match code {
                 KeyCode::Escape    => return keyboard.on_key_press(TKey::FunctionKey(FunctionKey::Escape)),
                 KeyCode::Tab       => return keyboard.on_key_press(TKey::FunctionKey(FunctionKey::Tab)),
@@ -263,32 +285,28 @@ impl<'a> TerminalWindow<'a> {
         }
 
         if let PhysicalKey::Code(code) = event.physical_key {
-            let renderer = self.terminal.get_renderer_mut();
-            let size = renderer.get_size();
+            let size = self.terminal_renderer.get_size();
             match code {
-                KeyCode::End      => return renderer.scroll_to_bottom(),
-                KeyCode::Home     => return renderer.scroll_to_top(),
-                KeyCode::PageDown => return renderer.scroll_down(size.y),
-                KeyCode::PageUp   => return renderer.scroll_up(size.y),
+                KeyCode::End      => return self.terminal_renderer.scroll_to_bottom(),
+                KeyCode::Home     => return self.terminal_renderer.scroll_to_top(),
+                KeyCode::PageDown => return self.terminal_renderer.scroll_down(size.y),
+                KeyCode::PageUp   => return self.terminal_renderer.scroll_up(size.y),
                 _ => {},
             }
         }
 
         if event.physical_key == PhysicalKey::Code(KeyCode::Space) {
-            let keyboard = self.terminal.get_keyboard_mut();
+            let mut keyboard = self.terminal.get_keyboard();
             keyboard.on_key_press(TKey::Char(' '));
-            let renderer = self.terminal.get_renderer_mut();
-            renderer.scroll_to_bottom();
+            self.terminal_renderer.scroll_to_bottom();
             return;
         }
         if let Key::Character(string) = event.logical_key {
-            let keyboard = self.terminal.get_keyboard_mut();
+            let mut keyboard = self.terminal.get_keyboard();
             for c in string.chars() {
                 keyboard.on_key_press(TKey::Char(c));
             }
-            let renderer = self.terminal.get_renderer_mut();
-            renderer.scroll_to_bottom();
-            return;
+            self.terminal_renderer.scroll_to_bottom();
         }
     }
 }

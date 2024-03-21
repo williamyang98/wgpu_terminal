@@ -8,4 +8,6 @@ pub mod terminal_display;
 pub mod terminal_keyboard;
 pub mod terminal_process;
 pub mod terminal_renderer;
+pub mod terminal_window;
+pub mod terminal_core;
 pub mod terminal;

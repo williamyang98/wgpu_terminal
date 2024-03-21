@@ -1,4 +1,4 @@
-use vt100::graphic_style::Rgb8;
+use vt100::common::Rgb8;
 
 pub const XTERM_COLOUR_TABLE: [u32; 256] = [
     0x000000, 0x800000, 0x008000, 0x808000, 0x000080,

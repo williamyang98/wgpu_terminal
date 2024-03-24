@@ -1,4 +1,4 @@
-#[derive(Debug)]
+#[derive(Debug,PartialEq,Eq)]
 pub struct CircularBuffer<T> {
     pub(crate) ptr: std::ptr::NonNull<T>,
     pub(crate) len: usize,

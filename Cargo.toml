@@ -10,6 +10,7 @@ cgmath = { git = "https://github.com/rustgd/cgmath.git", version = "0.18.0", fea
 log = { version = "0.4.20" }
 fontdue = { version = "0.8.0" }
 wgpu = { version = "0.19.0" }
+conpty = { version = "0.5.1", path = "./vendor/conpty-rs" }
 
 [profile.release-with-debug]
 inherits = "release"

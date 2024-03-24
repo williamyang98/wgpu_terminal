@@ -1,13 +1,23 @@
 mod utf8_parser;
-pub mod colour_table;
+mod colour_table;
 pub mod scrollback_buffer;
 pub mod viewport;
-pub mod primitives;
-pub mod terminal_parser;
+mod primitives;
+mod terminal_parser;
 pub mod terminal_display;
-pub mod terminal_keyboard;
-pub mod terminal_process;
 pub mod terminal_renderer;
-pub mod terminal_window;
-pub mod terminal_core;
-pub mod terminal;
+mod terminal;
+
+pub use crate::terminal::{
+    TerminalIOControl,
+    TerminalUserEvent,
+    Terminal,
+    TerminalBuilder,
+};
+pub use crate::primitives::{
+    Cell,
+    StyleFlags,
+};
+pub use crate::terminal_display::{
+    CursorStatus,
+};

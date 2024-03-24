@@ -36,7 +36,7 @@ impl TerminalRenderer {
         self.cells.as_slice()
     }
 
-    pub fn set_size(&mut self, size: Vector2<usize>) {
+    fn set_size(&mut self, size: Vector2<usize>) {
         let total_cells = size.x*size.y;
         self.size = size;
         self.cells.resize(total_cells, Cell::default());

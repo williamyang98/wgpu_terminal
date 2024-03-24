@@ -7,7 +7,8 @@ use tile_renderer::{
     CellData,
 };
 use terminal::{
-    terminal::Terminal,
+    Terminal,
+    TerminalUserEvent,
     terminal_renderer::TerminalRenderer,
 };
 use winit::{
@@ -19,9 +20,11 @@ use winit::{
 use crate::app_events::AppEvent;
 use crate::frame_counter::FrameCounter;
 use vt100::common::WindowAction;
+use crossbeam_channel::Sender;
 
 pub struct AppWindow<'a> {
-    terminal: Terminal, 
+    terminal: Terminal,
+    terminal_user_events: Sender<TerminalUserEvent>, 
     terminal_renderer: TerminalRenderer,
     glyph_grid: Vec<CellData>,
     glyph_cache: GlyphCache,
@@ -43,6 +46,7 @@ impl<'a> AppWindow<'a> {
         font_filename: String, font_size: f32,
     ) -> anyhow::Result<Self> 
     {
+        let terminal_user_events = terminal.get_user_event_handler();
         // wgpu
         let wgpu_instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
             backends: wgpu::util::backend_bits_from_env().unwrap_or_default(),
@@ -92,6 +96,7 @@ impl<'a> AppWindow<'a> {
 
         Ok(Self {
             terminal,
+            terminal_user_events,
             terminal_renderer: TerminalRenderer::default(),
             glyph_grid: Vec::new(),
             glyph_cache,
@@ -183,8 +188,7 @@ impl<'a> AppWindow<'a> {
         let new_render_scale = actual_render_size.cast::<f32>().unwrap().div_element_wise(new_size.cast::<f32>().unwrap());
         // update gpu
         self.renderer.update_render_scale(&self.wgpu_queue, new_render_scale);
-        self.terminal.set_size(new_grid_size);
-        self.terminal_renderer.set_size(new_grid_size);
+        self.terminal_user_events.send(TerminalUserEvent::WindowResize(new_grid_size)).unwrap();
         self.trigger_redraw();
     }
 
@@ -239,28 +243,29 @@ impl<'a> AppWindow<'a> {
     }
 
     fn on_keyboard_input(&mut self, event: winit::event::KeyEvent) {
-        use terminal::terminal_keyboard::KeyCode as TKey;
-        use vt100::key_input::{ModifierKey, ArrowKey, FunctionKey};
+        use vt100::encoder::{KeyCode as TKey, ModifierKey, ArrowKey, FunctionKey};
+
+        let key_press = &mut |key: TKey| self.terminal_user_events.send(TerminalUserEvent::KeyPress(key)).unwrap();
+        let key_release = &mut |key: TKey| self.terminal_user_events.send(TerminalUserEvent::KeyRelease(key)).unwrap();
         // modifier keys listen to press/release
         if let PhysicalKey::Code(code) = event.physical_key {
-            let mut keyboard = self.terminal.get_keyboard();
             match event.state {
                 ElementState::Pressed => match code {
-                    KeyCode::AltLeft      => return keyboard.on_key_press(TKey::ModifierKey(ModifierKey::Alt)),
-                    KeyCode::AltRight     => return keyboard.on_key_press(TKey::ModifierKey(ModifierKey::Alt)),
-                    KeyCode::ControlLeft  => return keyboard.on_key_press(TKey::ModifierKey(ModifierKey::Ctrl)),
-                    KeyCode::ControlRight => return keyboard.on_key_press(TKey::ModifierKey(ModifierKey::Ctrl)),
-                    KeyCode::ShiftLeft    => return keyboard.on_key_press(TKey::ModifierKey(ModifierKey::Shift)),
-                    KeyCode::ShiftRight   => return keyboard.on_key_press(TKey::ModifierKey(ModifierKey::Shift)),
+                    KeyCode::AltLeft      => return key_press(TKey::ModifierKey(ModifierKey::Alt)),
+                    KeyCode::AltRight     => return key_press(TKey::ModifierKey(ModifierKey::Alt)),
+                    KeyCode::ControlLeft  => return key_press(TKey::ModifierKey(ModifierKey::Ctrl)),
+                    KeyCode::ControlRight => return key_press(TKey::ModifierKey(ModifierKey::Ctrl)),
+                    KeyCode::ShiftLeft    => return key_press(TKey::ModifierKey(ModifierKey::Shift)),
+                    KeyCode::ShiftRight   => return key_press(TKey::ModifierKey(ModifierKey::Shift)),
                     _ => {},
                 },
                 ElementState::Released => match code {
-                    KeyCode::AltLeft      => return keyboard.on_key_release(TKey::ModifierKey(ModifierKey::Alt)),
-                    KeyCode::AltRight     => return keyboard.on_key_release(TKey::ModifierKey(ModifierKey::Alt)),
-                    KeyCode::ControlLeft  => return keyboard.on_key_release(TKey::ModifierKey(ModifierKey::Ctrl)),
-                    KeyCode::ControlRight => return keyboard.on_key_release(TKey::ModifierKey(ModifierKey::Ctrl)),
-                    KeyCode::ShiftLeft    => return keyboard.on_key_release(TKey::ModifierKey(ModifierKey::Shift)),
-                    KeyCode::ShiftRight   => return keyboard.on_key_release(TKey::ModifierKey(ModifierKey::Shift)),
+                    KeyCode::AltLeft      => return key_release(TKey::ModifierKey(ModifierKey::Alt)),
+                    KeyCode::AltRight     => return key_release(TKey::ModifierKey(ModifierKey::Alt)),
+                    KeyCode::ControlLeft  => return key_release(TKey::ModifierKey(ModifierKey::Ctrl)),
+                    KeyCode::ControlRight => return key_release(TKey::ModifierKey(ModifierKey::Ctrl)),
+                    KeyCode::ShiftLeft    => return key_release(TKey::ModifierKey(ModifierKey::Shift)),
+                    KeyCode::ShiftRight   => return key_release(TKey::ModifierKey(ModifierKey::Shift)),
                     _ => {},
                 },
             };
@@ -271,24 +276,22 @@ impl<'a> AppWindow<'a> {
         }
 
         if let PhysicalKey::Code(code) = event.physical_key {
-            let mut keyboard = self.terminal.get_keyboard();
             match code {
-                KeyCode::ArrowUp    => return keyboard.on_key_press(TKey::ArrowKey(ArrowKey::Up)),
-                KeyCode::ArrowDown  => return keyboard.on_key_press(TKey::ArrowKey(ArrowKey::Down)),
-                KeyCode::ArrowLeft  => return keyboard.on_key_press(TKey::ArrowKey(ArrowKey::Left)),
-                KeyCode::ArrowRight => return keyboard.on_key_press(TKey::ArrowKey(ArrowKey::Right)),
+                KeyCode::ArrowUp    => return key_press(TKey::ArrowKey(ArrowKey::Up)),
+                KeyCode::ArrowDown  => return key_press(TKey::ArrowKey(ArrowKey::Down)),
+                KeyCode::ArrowLeft  => return key_press(TKey::ArrowKey(ArrowKey::Left)),
+                KeyCode::ArrowRight => return key_press(TKey::ArrowKey(ArrowKey::Right)),
                 _ => {},
             }
         }
 
         if let PhysicalKey::Code(code) = event.physical_key {
-            let mut keyboard = self.terminal.get_keyboard();
             match code {
-                KeyCode::Escape    => return keyboard.on_key_press(TKey::FunctionKey(FunctionKey::Escape)),
-                KeyCode::Tab       => return keyboard.on_key_press(TKey::FunctionKey(FunctionKey::Tab)),
-                KeyCode::Backspace => return keyboard.on_key_press(TKey::FunctionKey(FunctionKey::Backspace)),
-                KeyCode::Enter     => return keyboard.on_key_press(TKey::FunctionKey(FunctionKey::Enter)),
-                KeyCode::Delete    => return keyboard.on_key_press(TKey::FunctionKey(FunctionKey::Delete)),
+                KeyCode::Escape    => return key_press(TKey::FunctionKey(FunctionKey::Escape)),
+                KeyCode::Tab       => return key_press(TKey::FunctionKey(FunctionKey::Tab)),
+                KeyCode::Backspace => return key_press(TKey::FunctionKey(FunctionKey::Backspace)),
+                KeyCode::Enter     => return key_press(TKey::FunctionKey(FunctionKey::Enter)),
+                KeyCode::Delete    => return key_press(TKey::FunctionKey(FunctionKey::Delete)),
                 _ => {},
             }
         }
@@ -310,19 +313,15 @@ impl<'a> AppWindow<'a> {
         }
 
         if event.physical_key == PhysicalKey::Code(KeyCode::Space) {
-            let mut keyboard = self.terminal.get_keyboard();
-            keyboard.on_key_press(TKey::Char(' '));
-            drop(keyboard);
+            key_press(TKey::Char(' '));
             self.terminal_renderer.scroll_to_bottom();
             self.trigger_redraw();
             return;
         }
         if let Key::Character(string) = event.logical_key {
-            let mut keyboard = self.terminal.get_keyboard();
             for c in string.chars() {
-                keyboard.on_key_press(TKey::Char(c));
+                key_press(TKey::Char(c));
             }
-            drop(keyboard);
             self.terminal_renderer.scroll_to_bottom();
             self.trigger_redraw();
         }

@@ -1,7 +1,7 @@
 pub mod parser;
 pub mod command;
 pub mod common;
-pub mod key_input;
+pub mod encoder;
 
 #[cfg(test)]
 mod tests {
@@ -10,6 +10,7 @@ mod tests {
         command::Command,
         parser::{Parser,ParserHandler,ParserError},
         common::*,
+        encoder::*,
     };
     use std::collections::HashMap;
 
@@ -188,18 +189,22 @@ mod tests {
             ((  47, false), vec![Command::RestoreScreen]),
             ((1000, true) , vec![Command::SetReportMouseClick(true)]),
             ((1000, false), vec![Command::SetReportMouseClick(false)]),
-            ((1001, true) , vec![Command::SetHiliteMouseTracking(true)]),
-            ((1001, false), vec![Command::SetHiliteMouseTracking(false)]),
+            ((1001, true) , vec![Command::SetHighlightMouseTracking(true)]),
+            ((1001, false), vec![Command::SetHighlightMouseTracking(false)]),
             ((1002, true) , vec![Command::SetCellMouseTracking(true)]),
             ((1002, false), vec![Command::SetCellMouseTracking(false)]),
             ((1003, true) , vec![Command::SetAllMouseTracking(true)]),
             ((1003, false), vec![Command::SetAllMouseTracking(false)]),
             ((1004, true) , vec![Command::SetReportFocus(true)]),
             ((1004, false), vec![Command::SetReportFocus(false)]),
-            ((1005, true),  vec![Command::SetUtf8MouseMode(true)]),
-            ((1005, false), vec![Command::SetUtf8MouseMode(false)]),
-            ((1006, true),  vec![Command::SetSelectiveGraphicRenditionMouseMode(true)]),
-            ((1006, false), vec![Command::SetSelectiveGraphicRenditionMouseMode(false)]),
+            ((1005, true),  vec![Command::SetMouseCoordinateFormat(MouseCoordinateFormat::Utf8)]),
+            ((1005, false), vec![Command::SetMouseCoordinateFormat(MouseCoordinateFormat::Normal)]),
+            ((1006, true),  vec![Command::SetMouseCoordinateFormat(MouseCoordinateFormat::Sgr)]),
+            ((1006, false), vec![Command::SetMouseCoordinateFormat(MouseCoordinateFormat::Normal)]),
+            ((1015, true),  vec![Command::SetMouseCoordinateFormat(MouseCoordinateFormat::Urxvt)]),
+            ((1015, false), vec![Command::SetMouseCoordinateFormat(MouseCoordinateFormat::Normal)]),
+            ((1016, true),  vec![Command::SetMouseCoordinateFormat(MouseCoordinateFormat::SgrPixel)]),
+            ((1016, false), vec![Command::SetMouseCoordinateFormat(MouseCoordinateFormat::Normal)]),
             ((1047, true) , vec![Command::SetAlternateBuffer(true)]),
             ((1047, false), vec![Command::SetAlternateBuffer(false)]),
             ((1048, true) , vec![Command::SaveCursorToMemory]),

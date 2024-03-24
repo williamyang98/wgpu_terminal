@@ -39,36 +39,6 @@ pub enum CharacterSet {
     LineDrawing,
 }
 
-#[derive(Clone,Copy,Debug,PartialEq,Eq)]
-pub enum InputMode {
-    Application,
-    Numeric,
-}
-
-#[derive(Clone,Copy,Debug,PartialEq,Eq)]
-pub enum KeyType {
-    Keyboard,
-    CursorKeys,
-    FunctionKeys,
-    KeypadKeys,
-    OtherKeys,
-    StringKeys,
-}
-
-impl KeyType {
-    pub(crate) fn try_from_u16(x: u16) -> Option<Self> {
-        match x {
-            0 => Some(Self::Keyboard),
-            1 => Some(Self::CursorKeys),
-            2 => Some(Self::FunctionKeys),
-            3 => Some(Self::KeypadKeys),
-            4 => Some(Self::OtherKeys),
-            5 => Some(Self::StringKeys),
-            _ => None,
-        }
-    }
-}
-
 #[derive(Clone,Debug,PartialEq,Eq)]
 pub enum WindowAction {
     Move(Vector2<u16>),

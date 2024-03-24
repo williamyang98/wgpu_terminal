@@ -1,37 +1,77 @@
-use terminal::terminal::Terminal;
-use terminal::terminal_process::TerminalProcess;
-use terminal::terminal_window::TerminalWindow;
+use terminal::{
+    Terminal, 
+    TerminalBuilder,
+    TerminalIOControl,
+    TerminalUserEvent,
+};
 use terminal::terminal_renderer::TerminalRenderer;
+use terminal_process::TerminalProcess;
 use vt100::common::WindowAction;
 use crate::app_events::AppEvent;
 use crate::app_window::AppWindow;
 use cgmath::Vector2;
-use std::io::Write;
-
-struct TerminalWindowEvents {
-    event_loop_proxy: winit::event_loop::EventLoopProxy<AppEvent>,
-}
-
-impl TerminalWindow for TerminalWindowEvents {
-    fn on_window_action(&self, action: WindowAction) {
-        if let Err(err) = self.event_loop_proxy.send_event(AppEvent::WindowAction(action)) {
-            log::error!("Failed to sent window action to app event loop: {:?}", err);
-        }
-    }
-}
+use std::io::{Read, Write};
+use std::sync::{Arc, Mutex};
 
 pub struct AppBuilder {
     pub font_filename: String,
     pub font_size: f32,
-    pub process: Box<dyn TerminalProcess>,
+    pub process: Arc<Mutex<Box<dyn TerminalProcess + Send>>>,
+}
+
+fn create_default_terminal_builder(process: Arc<Mutex<Box<dyn TerminalProcess + Send>>>) -> TerminalBuilder {
+    let process_read = {
+        let mut read_pipe = process.lock().unwrap().get_read_pipe();
+        move |data: &mut [u8]| {
+            read_pipe.read(data).unwrap_or(0)
+        }
+    };
+    let process_write = {
+        let mut write_pipe = process.lock().unwrap().get_write_pipe();
+        move |data: &[u8]| {
+            write_pipe.write_all(data).unwrap();
+        }
+    };
+    let process_ioctl = {
+        let process = process.clone();
+        move |ev: TerminalIOControl| {
+            let mut process = process.lock().unwrap();
+            process.on_ioctl(ev).unwrap();
+        }
+    };
+    let window_action = |_action: WindowAction| {};
+    TerminalBuilder {
+        process_read: Box::new(process_read),
+        process_write: Box::new(process_write),
+        process_ioctl: Box::new(process_ioctl),
+        window_action: Box::new(window_action),
+    }
 }
 
 pub fn start_app(builder: AppBuilder) -> anyhow::Result<()> {
+    let process = builder.process;
+    let mut terminal_builder = create_default_terminal_builder(process.clone());
     let event_loop = winit::event_loop::EventLoopBuilder::<AppEvent>::with_user_event().build()?;
-    let terminal_window_events = TerminalWindowEvents { 
-        event_loop_proxy: event_loop.create_proxy(),
+    use std::sync::atomic::{AtomicBool, Ordering};
+    let is_refresh_trigger = Arc::new(AtomicBool::new(false));
+    let window_action = {
+        let event_loop_proxy = event_loop.create_proxy();
+        let is_refresh_trigger = is_refresh_trigger.clone();
+        move |action: WindowAction| {
+            if action == WindowAction::Refresh && is_refresh_trigger.fetch_or(true, Ordering::SeqCst) {
+                return;
+            }
+            event_loop_proxy.send_event(AppEvent::WindowAction(action)).unwrap();
+        }
     };
-    let terminal = Terminal::new(builder.process, Box::new(terminal_window_events));
+    terminal_builder.window_action = Box::new(window_action);
+    let terminal = Terminal::new(terminal_builder);
+    {
+        let user_events = terminal.get_user_event_handler();
+        let is_carriage_return = process.lock().unwrap().is_newline_carriage_return();
+        let event = TerminalUserEvent::SetIsNewlineCarriageReturn(is_carriage_return);
+        user_events.send(event).unwrap();
+    }
 
     let window = winit::window::WindowBuilder::new().build(&event_loop)?;
     let mut window_size = window.inner_size();
@@ -42,21 +82,34 @@ pub fn start_app(builder: AppBuilder) -> anyhow::Result<()> {
         terminal,
         builder.font_filename, builder.font_size,
     ))?;
-    event_loop.run(move |event, target| {
-        terminal_window.on_winit_event(event, target);
+    event_loop.run({
+        let is_refresh_trigger = is_refresh_trigger.clone();
+        use winit::event::{Event, WindowEvent};
+        move |event, target| {
+            if let Event::WindowEvent { ref event, .. } = event { 
+                if event == &WindowEvent::RedrawRequested {
+                    is_refresh_trigger.store(false, Ordering::SeqCst);
+                }
+            }
+            terminal_window.on_winit_event(event, target);
+        }
     })?;
     Ok(())
 }
 
 pub fn start_headless(builder: AppBuilder) -> anyhow::Result<()> {
-    struct DummyWindow {}
-    impl TerminalWindow for DummyWindow {
-        fn on_window_action(&self, _action: WindowAction) {}
+    let process = builder.process;
+    let terminal_builder = create_default_terminal_builder(process.clone());
+    let mut terminal = Terminal::new(terminal_builder);
+    {
+        let user_events = terminal.get_user_event_handler();
+        let is_carriage_return = process.lock().unwrap().is_newline_carriage_return();
+        user_events.send(TerminalUserEvent::SetIsNewlineCarriageReturn(is_carriage_return)).unwrap();
+        user_events.send(TerminalUserEvent::WindowResize(Vector2::new(100,32))).unwrap();
     }
-    let mut terminal = Terminal::new(builder.process, Box::new(DummyWindow {}));
+    terminal.join_parser_thread();
+    let _ = process.lock().unwrap().terminate();
 
-    terminal.set_size(Vector2::new(100,32));
-    terminal.wait();
     let mut terminal_renderer = TerminalRenderer::default();
     let display = terminal.get_display();
     terminal_renderer.render_viewport(display.get_viewport());

@@ -2,7 +2,7 @@ use bitflags::bitflags;
 use vt100::common::Rgb8;
 
 bitflags! {
-    #[derive(Clone,Copy,Debug,Default)]
+    #[derive(Clone,Copy,Debug,Default,PartialEq,Eq)]
     pub struct StyleFlags: u8 {
         const None          = 0b0000_0000;
         const Bold          = 0b0000_0001;
@@ -17,7 +17,7 @@ bitflags! {
     }
 }
 
-#[derive(Clone,Copy,Default,Debug)]
+#[derive(Clone,Copy,Default,Debug,PartialEq,Eq)]
 pub struct Cell {
     pub character: char, // 4
     pub background_colour: Rgb8, // 3
@@ -25,7 +25,7 @@ pub struct Cell {
     pub style_flags: StyleFlags, // 1
 }
 
-#[derive(Clone,Copy,Default,Debug)]
+#[derive(Clone,Copy,Default,Debug,PartialEq,Eq)]
 pub struct Pen {
     pub background_colour: Rgb8,
     pub foreground_colour: Rgb8,

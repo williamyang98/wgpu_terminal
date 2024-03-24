@@ -10,6 +10,7 @@ cgmath = { workspace = true, features = ["bytemuck"] }
 vt100 = { version = "0.0.1", path = "../vt100" }
 terminal = { version = "0.0.1", path = "../terminal" }
 terminal_process = { version = "0.0.1", path = "../terminal_process" }
+crossbeam-channel = { version = "0.5" }
 # graphics
 fontdue = { workspace = true }
 tile_renderer = { version = "0.0.1", path = "../tile_renderer" }
@@ -24,7 +25,7 @@ pollster = { version = "0.3.0" }
 anyhow = { version = "1.0.80" }
 
 [target.'cfg(windows)'.dependencies]
-conpty = { version = "0.5.1" }
+conpty = { workspace = true }
 
 [target.'cfg(unix)'.dependencies.nix]
 version = "0.28.0"

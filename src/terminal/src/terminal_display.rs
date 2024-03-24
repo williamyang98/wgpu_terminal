@@ -12,7 +12,7 @@ use vt100::{
 };
 use cgmath::Vector2;
 
-#[derive(Clone,Copy,Debug)]
+#[derive(Clone,Copy,Debug,PartialEq,Eq)]
 pub struct CursorStatus {
     pub is_visible: bool,
     pub is_blinking: bool,

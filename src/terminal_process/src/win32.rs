@@ -1,7 +1,7 @@
-use terminal::terminal_process::TerminalProcess;
-use cgmath::Vector2;
+use crate::process::TerminalProcess;
+use terminal::TerminalIOControl;
 use std::error::Error;
-use std::io::{Read,Write};
+use std::io::{Read, Write};
 
 pub struct ConptyProcess {
     process: conpty::Process,
@@ -31,8 +31,10 @@ impl TerminalProcess for ConptyProcess {
         Box::new(read_pipe)
     }
 
-    fn set_size(&mut self, size: Vector2<usize>) -> Result<(), Box<dyn Error>> {
-        self.process.resize(size.x as i16, size.y as i16)?;
+    fn on_ioctl(&mut self, ev: TerminalIOControl) -> Result<(), Box<dyn Error>> {
+        match ev {
+            TerminalIOControl::SetSize(size) => self.process.resize(size.x as i16, size.y as i16)?,
+        }
         Ok(())
     }
 

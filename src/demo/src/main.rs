@@ -1,10 +1,7 @@
 use clap::Parser;
-
-
-use terminal::terminal_process::TerminalProcess;
-
 use terminal_process::*;
 use wgpu_terminal::app::{AppBuilder, start_app, start_headless};
+use std::sync::{Arc, Mutex};
 
 #[derive(Clone,Copy,Debug,Default,clap::ValueEnum)]
 enum Mode {
@@ -72,8 +69,8 @@ fn start_conpty(args: &Args) -> anyhow::Result<()> {
     command.stdout(std::process::Stdio::piped());
     command.stderr(std::process::Stdio::piped());
     let process = conpty::Process::spawn(command)?;
-    let process = Box::new(ConptyProcess::new(process));
-    start_terminal(args.clone(), process)?;
+    let process = ConptyProcess::new(process);
+    start_terminal(args.clone(), Arc::new(Mutex::new(Box::new(process))))?;
     Ok(())
 }
 
@@ -84,12 +81,12 @@ fn start_raw_shell(args: &Args) -> anyhow::Result<()> {
     command.stdout(std::process::Stdio::piped());
     command.stderr(std::process::Stdio::null());
     let process = command.spawn()?;
-    let process = Box::new(RawProcess::new(process));
-    start_terminal(args.clone(), process)?;
+    let process = RawProcess::new(process);
+    start_terminal(args.clone(), Arc::new(Mutex::new(Box::new(process))))?;
     Ok(())
 }
 
-fn start_terminal(args: Args, process: Box<dyn TerminalProcess>) -> anyhow::Result<()> {
+fn start_terminal(args: Args, process: Arc<Mutex<Box<dyn TerminalProcess + Send>>>) -> anyhow::Result<()> {
     let builder = AppBuilder {
         font_filename: args.font_filename.to_owned(),
         font_size: args.font_size,

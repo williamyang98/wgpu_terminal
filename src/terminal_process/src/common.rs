@@ -1,7 +1,7 @@
-use terminal::terminal_process::TerminalProcess;
-use cgmath::Vector2;
+use crate::process::TerminalProcess;
+use terminal::TerminalIOControl;
 use std::error::Error;
-use std::io::{Read,Write};
+use std::io::{Read, Write};
 use std::process::Child;
 
 pub struct RawProcess {
@@ -32,7 +32,7 @@ impl TerminalProcess for RawProcess {
         Box::new(read_pipe)
     }
 
-    fn set_size(&mut self, _size: Vector2<usize>) -> Result<(), Box<dyn Error>> {
+    fn on_ioctl(&mut self, _ev: TerminalIOControl) -> Result<(), Box<dyn Error>> {
         Ok(())
     }
 

@@ -5,12 +5,15 @@ use crate::common::{
     CursorStyle,
     EraseMode,
     GraphicStyle,
-    InputMode,
-    KeyType,
     Rgb8,
     ScreenMode,
     ScrollRegion,
     WindowAction,
+};
+use crate::encoder::{
+    InputMode,
+    KeyType,
+    MouseCoordinateFormat,
 };
 
 #[derive(Clone,Debug,PartialEq)]
@@ -73,12 +76,11 @@ pub enum Command {
     SaveScreen,
     RestoreScreen,
     SetReportMouseClick(bool),
-    SetHiliteMouseTracking(bool),
+    SetHighlightMouseTracking(bool),
     SetCellMouseTracking(bool),
     SetAllMouseTracking(bool),
     SetReportFocus(bool),
-    SetUtf8MouseMode(bool),
-    SetSelectiveGraphicRenditionMouseMode(bool),
+    SetMouseCoordinateFormat(MouseCoordinateFormat),
     SetAlternateBuffer(bool),
     SetBracketedPasteMode(bool),
     // screen mode

@@ -56,7 +56,7 @@ impl Default for TerminalDisplay {
         assert!(colour_table.len() == 256);
         let default_pen = Pen {
             foreground_colour: Rgb8 { r: 255, b: 255, g: 255 },
-            background_colour: Rgb8 { r: 0, b: 0, g: 0 },
+            background_colour: Rgb8 { r: 5, b: 10, g: 7 },
             style_flags: StyleFlags::None,
         };
         Self {

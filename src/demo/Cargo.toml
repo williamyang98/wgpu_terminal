@@ -23,13 +23,7 @@ simple_logger = { version = "4.3.3", features = ["colors", "threads", "stderr"] 
 clap = { version = "4.5.1", features = ["derive"] }
 pollster = { version = "0.3.0" }
 anyhow = { version = "1.0.80" }
-
-[target.'cfg(windows)'.dependencies]
+#[cfg(windows)]
 conpty = { workspace = true }
-
-[target.'cfg(unix)'.dependencies.nix]
-version = "0.28.0"
-features = [
-    "term", 
-    "process",
-]
+#[cfg(unix)]
+nix = { version = "0.28.0", features = ["term", "process"] }

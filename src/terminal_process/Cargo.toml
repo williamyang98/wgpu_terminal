@@ -8,12 +8,13 @@ cgmath = { workspace = true, features = ["bytemuck"] }
 log = { workspace = true }
 terminal = { version = "0.0.1", path = "../terminal" }
 
-[target.'cfg(windows)'.dependencies]
+#[cfg(windows)]
 conpty = { workspace = true }
 
-[target.'cfg(unix)'.dependencies.nix]
+#[cfg(unix)]
+[dependencies.nix]
 version = "0.28.0"
 features = [
-    "term", 
+    "term",
     "process",
 ]

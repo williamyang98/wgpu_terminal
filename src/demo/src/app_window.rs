@@ -254,15 +254,15 @@ impl<'a> AppWindow<'a> {
             );
             dst.atlas_index = atlas_index.cast::<u16>().unwrap();
             dst.colour_foreground = Vector4::new(
-                src.foreground_colour.r,
-                src.foreground_colour.g,
-                src.foreground_colour.b,
+                src.pen.foreground_colour.r,
+                src.pen.foreground_colour.g,
+                src.pen.foreground_colour.b,
                 255,
             );
             dst.colour_background = Vector4::new(
-                src.background_colour.r,
-                src.background_colour.g,
-                src.background_colour.b,
+                src.pen.background_colour.r,
+                src.pen.background_colour.g,
+                src.pen.background_colour.b,
                 255,
             );
             dst.style_flags = 0u32;

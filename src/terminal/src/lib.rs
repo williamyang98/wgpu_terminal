@@ -1,7 +1,6 @@
 mod utf8_parser;
 mod colour_table;
 pub mod scrollback_buffer;
-pub mod viewport;
 mod primitives;
 mod terminal_parser;
 pub mod terminal_display;

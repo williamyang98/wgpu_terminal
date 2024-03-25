@@ -43,10 +43,9 @@ impl TerminalRenderer {
     }
 
     pub fn render_display(&mut self, display: &TerminalDisplay) {
-        let viewport = display.get_viewport();
-        let scrollback_buffer = viewport.get_scrollback_buffer();
+        let scrollback_buffer = display.get_scrollback_buffer();
         let scrollback_buffer_lines = scrollback_buffer.get_lines();
-        let size = viewport.get_size();
+        let size = display.get_size();
         self.set_size(size);
         self.last_known_total_rows = scrollback_buffer_lines.len();
         let scrollback_row = match self.position {
@@ -61,8 +60,7 @@ impl TerminalRenderer {
             },
         };
         let default_pen = display.default_pen;
-        let mut default_cell = Cell::default();
-        default_pen.colour_in_cell(&mut default_cell);
+        let default_cell = Cell { character: ' ', pen: default_pen };
         self.cells.fill(default_cell);
 
         let mut cursor: Vector2<usize> = Vector2::new(0,0);
@@ -91,25 +89,25 @@ impl TerminalRenderer {
             cursor.y += 1;
         }
         // render viewport
-        let viewport_cursor = viewport.get_cursor();
+        let viewport_cursor = display.get_cursor();
         for y in 0..size.y {
             if cursor.y >= size.y {
                 break;
             }
-            let (src_row, status) = viewport.get_row(y);
+            let (src_row, status) = display.get_row(y);
             assert!(status.length <= size.x);
             let dst_index = cursor.y*size.x;
             let dst_row = &mut self.cells[dst_index..(dst_index+size.x)];
             dst_row[..status.length].copy_from_slice(&src_row[..status.length]);
             dst_row[status.length..].iter_mut().for_each(|c| {
                 c.character = ' ';
-                default_pen.colour_in_cell(c);
+                c.pen = default_pen;
             });
             // TODO: render cursor properly with all the different styles
             if y == viewport_cursor.y {
                 let x = viewport_cursor.x.min(size.x-1);
                 let cell = &mut dst_row[x];
-                std::mem::swap(&mut cell.foreground_colour, &mut cell.background_colour);
+                std::mem::swap(&mut cell.pen.foreground_colour, &mut cell.pen.background_colour);
             }
             cursor.y += 1;
         }

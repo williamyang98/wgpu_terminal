@@ -18,17 +18,15 @@ bitflags! {
 }
 
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
-pub struct Cell {
-    pub character: char, // 4
-    pub background_colour: Rgb8, // 3
-    pub foreground_colour: Rgb8, // 3
-    pub style_flags: StyleFlags, // 1
+pub struct Pen {
+    pub background_colour: Rgb8,
+    pub foreground_colour: Rgb8,
+    pub style_flags: StyleFlags,
 }
 
-impl Default for Cell {
+impl Default for Pen {
     fn default() -> Self {
         Self {
-            character: ' ',
             background_colour: Rgb8 { r:0, g:0, b:0 },
             foreground_colour: Rgb8 { r:255, g:255, b:255 },
             style_flags: StyleFlags::None,
@@ -36,18 +34,18 @@ impl Default for Cell {
     }
 }
 
-#[derive(Clone,Copy,Default,Debug,PartialEq,Eq)]
-pub struct Pen {
-    pub background_colour: Rgb8,
-    pub foreground_colour: Rgb8,
-    pub style_flags: StyleFlags,
+#[derive(Clone,Copy,Debug,PartialEq,Eq)]
+pub struct Cell {
+    pub character: char,
+    pub pen: Pen,
 }
 
-impl Pen {
-    #[inline]
-    pub fn colour_in_cell(&self, cell: &mut Cell) {
-        cell.background_colour = self.background_colour;
-        cell.foreground_colour = self.foreground_colour;
-        cell.style_flags = self.style_flags;
+impl Default for Cell {
+    fn default() -> Self {
+        Self {
+            character: ' ',
+            pen: Pen::default(),
+        }
     }
 }
+

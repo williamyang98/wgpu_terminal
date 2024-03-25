@@ -206,57 +206,54 @@ impl TerminalParserHandler for ParserHandler {
                 EraseMode::FromCursorToEnd => {
                     let mut display = self.display.lock().unwrap();
                     let pen = display.pen;
-                    let viewport = display.get_viewport_mut();
-                    let size = viewport.get_size();
-                    let cursor = viewport.get_cursor();
+                    let size = display.get_size();
+                    let cursor = display.get_cursor();
                     for y in (cursor.y+1)..size.y {
-                        let (line, status) = viewport.get_row_mut(y);
+                        let (line, status) = display.get_row_mut(y);
                         line.iter_mut().for_each(|c| {
                             c.character = ' '; 
-                            pen.colour_in_cell(c);
+                            c.pen = pen;
                         });
                         status.length = size.x;
                         status.is_linebreak = true;
                     }
-                    let (line, status) = viewport.get_row_mut(cursor.y);
+                    let (line, status) = display.get_row_mut(cursor.y);
                     line[cursor.x..status.length].iter_mut().for_each(|c| {
                         c.character = ' ';
-                        pen.colour_in_cell(c);
+                        c.pen = pen;
                     });
                     window_action(WindowAction::Refresh);
                 },
                 EraseMode::FromCursorToStart => {
                     let mut display = self.display.lock().unwrap();
                     let pen = display.pen;
-                    let viewport = display.get_viewport_mut();
-                    let size = viewport.get_size();
-                    let cursor = viewport.get_cursor();
+                    let size = display.get_size();
+                    let cursor = display.get_cursor();
                     for y in 0..cursor.y {
-                        let (line, status) = viewport.get_row_mut(y);
+                        let (line, status) = display.get_row_mut(y);
                         line.iter_mut().for_each(|c| {
                             c.character = ' '; 
-                            pen.colour_in_cell(c);
+                            c.pen = pen;
                         });
                         status.length = size.x;
                         status.is_linebreak = true;
                     }
-                    let (line, _) = viewport.get_row_mut(cursor.y);
+                    let (line, _) = display.get_row_mut(cursor.y);
                     line[..=cursor.x].iter_mut().for_each(|c| {
                         c.character = ' ';
-                        pen.colour_in_cell(c);
+                        c.pen = pen;
                     });
                     window_action(WindowAction::Refresh);
                 },
                 EraseMode::EntireDisplay | EraseMode::SavedLines => {
                     let mut display = self.display.lock().unwrap();
                     let pen = display.pen;
-                    let viewport = display.get_viewport_mut();
-                    let size = viewport.get_size();
+                    let size = display.get_size();
                     for y in 0..size.y {
-                        let (line, status) = viewport.get_row_mut(y);
+                        let (line, status) = display.get_row_mut(y);
                         line.iter_mut().for_each(|c| {
                             c.character = ' '; 
-                            pen.colour_in_cell(c);
+                            c.pen = pen;
                         });
                         status.length = size.x;
                         status.is_linebreak = true;
@@ -268,13 +265,12 @@ impl TerminalParserHandler for ParserHandler {
                 EraseMode::FromCursorToEnd => {
                     let mut display = self.display.lock().unwrap();
                     let pen = display.pen;
-                    let viewport = display.get_viewport_mut();
-                    let size = viewport.get_size();
-                    let cursor = viewport.get_cursor();
-                    let (line, status) = viewport.get_row_mut(cursor.y);
+                    let size = display.get_size();
+                    let cursor = display.get_cursor();
+                    let (line, status) = display.get_row_mut(cursor.y);
                     line[cursor.x..].iter_mut().for_each(|c| {
                         c.character = ' '; 
-                        pen.colour_in_cell(c);
+                        c.pen = pen;
                     });
                     status.length = size.x;
                     status.is_linebreak = true;
@@ -283,25 +279,23 @@ impl TerminalParserHandler for ParserHandler {
                 EraseMode::FromCursorToStart => {
                     let mut display = self.display.lock().unwrap();
                     let pen = display.pen;
-                    let viewport = display.get_viewport_mut();
-                    let cursor = viewport.get_cursor();
-                    let (line, _) = viewport.get_row_mut(cursor.y);
+                    let cursor = display.get_cursor();
+                    let (line, _) = display.get_row_mut(cursor.y);
                     line[..=cursor.x].iter_mut().for_each(|c| {
                         c.character = ' '; 
-                        pen.colour_in_cell(c);
+                        c.pen = pen;
                     });
                     window_action(WindowAction::Refresh);
                 },
                 EraseMode::EntireDisplay | EraseMode::SavedLines => {
                     let mut display = self.display.lock().unwrap();
                     let pen = display.pen;
-                    let viewport = display.get_viewport_mut();
-                    let size = viewport.get_size();
-                    let cursor = viewport.get_cursor();
-                    let (line, status) = viewport.get_row_mut(cursor.y);
+                    let size = display.get_size();
+                    let cursor = display.get_cursor();
+                    let (line, status) = display.get_row_mut(cursor.y);
                     line.iter_mut().for_each(|c| {
                         c.character = ' ';
-                        pen.colour_in_cell(c);
+                        c.pen = pen;
                     });
                     status.length = size.x;
                     status.is_linebreak = true;
@@ -311,39 +305,36 @@ impl TerminalParserHandler for ParserHandler {
             Vt100Command::ReplaceWithSpaces(total) => {
                 let mut display = self.display.lock().unwrap();
                 let pen = display.pen;
-                let viewport = display.get_viewport_mut();
-                let cursor = viewport.get_cursor();
-                let (line, _) = viewport.get_row_mut(cursor.y);
+                let cursor = display.get_cursor();
+                let (line, _) = display.get_row_mut(cursor.y);
                 let region = &mut line[cursor.x..];
                 let total = (total as usize).min(region.len());
                 region[..total].iter_mut().for_each(|c| {
                     c.character = ' ';
-                    pen.colour_in_cell(c);
+                    c.pen = pen;
                 });
                 window_action(WindowAction::Refresh);
             },
             Vt100Command::InsertSpaces(total) => {
                 let mut display = self.display.lock().unwrap();
                 let pen = display.pen;
-                let viewport = display.get_viewport_mut();
-                let cursor = viewport.get_cursor();
-                let (line, status) = viewport.get_row_mut(cursor.y);
+                let cursor = display.get_cursor();
+                let (line, status) = display.get_row_mut(cursor.y);
                 let region = &mut line[cursor.x..];
                 let total = (total as usize).min(region.len());
                 let shift = region.len()-total;
                 region.copy_within(0..shift, total);
                 region[..total].iter_mut().for_each(|c| {
                     c.character = ' ';
-                    pen.colour_in_cell(c);
+                    c.pen = pen;
                 });
                 status.length = (status.length+total).min(line.len());
                 window_action(WindowAction::Refresh);
             },
             Vt100Command::DeleteCharacters(total) => {
                 let mut display = self.display.lock().unwrap();
-                let viewport = display.get_viewport_mut();
-                let cursor = viewport.get_cursor();
-                let (line, status) = viewport.get_row_mut(cursor.y);
+                let cursor = display.get_cursor();
+                let (line, status) = display.get_row_mut(cursor.y);
                 let region = &mut line[(cursor.x+1)..];
                 let total = (total as usize).min(region.len());
                 region.copy_within(total.., 0);
@@ -352,15 +343,14 @@ impl TerminalParserHandler for ParserHandler {
             },
             Vt100Command::InsertLines(total_insert) => {
                 let mut display = self.display.lock().unwrap();
-                let viewport = display.get_viewport_mut();
-                let cursor = viewport.get_cursor();
-                let size = viewport.get_size();
+                let cursor = display.get_cursor();
+                let size = display.get_size();
                 let lines_at_cursor = size.y-cursor.y;
                 let total_insert = (total_insert as usize).min(lines_at_cursor);
                 let total_copy = lines_at_cursor-total_insert;
-                viewport.copy_lines_within(cursor.y, cursor.y+total_insert, total_copy);
+                display.copy_lines_within(cursor.y, cursor.y+total_insert, total_copy);
                 for i in 0..total_insert {
-                    let (_, status) = viewport.get_row_mut(cursor.y+i);
+                    let (_, status) = display.get_row_mut(cursor.y+i);
                     status.length = 0;
                     status.is_linebreak = true;
                 }
@@ -368,15 +358,14 @@ impl TerminalParserHandler for ParserHandler {
             },
             Vt100Command::DeleteLines(total_delete) => {
                 let mut display = self.display.lock().unwrap();
-                let viewport = display.get_viewport_mut();
-                let cursor = viewport.get_cursor();
-                let size = viewport.get_size();
+                let cursor = display.get_cursor();
+                let size = display.get_size();
                 let lines_at_cursor = size.y-cursor.y;
                 let total_delete = (total_delete as usize).min(lines_at_cursor);
                 let total_copy = lines_at_cursor-total_delete;
-                viewport.copy_lines_within(cursor.y+total_delete, cursor.y, total_copy);
+                display.copy_lines_within(cursor.y+total_delete, cursor.y, total_copy);
                 for i in 0..total_delete {
-                    let (_, status) = viewport.get_row_mut(cursor.y+total_copy+i);
+                    let (_, status) = display.get_row_mut(cursor.y+total_copy+i);
                     status.length = 0;
                     status.is_linebreak = true;
                 }
@@ -384,83 +373,73 @@ impl TerminalParserHandler for ParserHandler {
             },
             Vt100Command::MoveCursorPositionViewport(pos) => {
                 let mut display = self.display.lock().unwrap();
-                let viewport = display.get_viewport_mut();
                 // top left corner is (1,1)
                 let x = pos.x.saturating_sub(1) as usize;
                 let y = pos.y.saturating_sub(1) as usize;
-                viewport.set_cursor(Vector2::new(x,y));
+                display.set_cursor(Vector2::new(x,y));
                 window_action(WindowAction::Refresh);
             },
             Vt100Command::MoveCursorUp(total) => {
                 let mut display = self.display.lock().unwrap();
-                let viewport = display.get_viewport_mut();
-                let mut cursor = viewport.get_cursor();
+                let mut cursor = display.get_cursor();
                 cursor.y = cursor.y.saturating_sub(total as usize);
-                viewport.set_cursor(cursor);
+                display.set_cursor(cursor);
                 window_action(WindowAction::Refresh);
             },
             Vt100Command::MoveCursorDown(total) => {
                 let mut display = self.display.lock().unwrap();
-                let viewport = display.get_viewport_mut();
-                let mut cursor = viewport.get_cursor();
+                let mut cursor = display.get_cursor();
                 cursor.y += total as usize;
-                viewport.set_cursor(cursor);
+                display.set_cursor(cursor);
                 window_action(WindowAction::Refresh);
             },
             Vt100Command::MoveCursorRight(total) => {
                 let mut display = self.display.lock().unwrap();
-                let viewport = display.get_viewport_mut();
-                let mut cursor = viewport.get_cursor();
+                let mut cursor = display.get_cursor();
                 cursor.x += total as usize;
-                viewport.set_cursor(cursor);
+                display.set_cursor(cursor);
                 window_action(WindowAction::Refresh);
             },
             Vt100Command::MoveCursorLeft(total) => {
                 let mut display = self.display.lock().unwrap();
-                let viewport = display.get_viewport_mut();
-                let mut cursor = viewport.get_cursor();
+                let mut cursor = display.get_cursor();
                 cursor.x = cursor.x.saturating_sub(total as usize);
-                viewport.set_cursor(cursor);
+                display.set_cursor(cursor);
                 window_action(WindowAction::Refresh);
             },
             Vt100Command::MoveCursorReverseIndex => {
                 let mut display = self.display.lock().unwrap();
-                let viewport = display.get_viewport_mut();
-                let mut cursor = viewport.get_cursor();
+                let mut cursor = display.get_cursor();
                 cursor.y = cursor.y.saturating_sub(1);
-                viewport.set_cursor(cursor);
+                display.set_cursor(cursor);
                 window_action(WindowAction::Refresh);
             },
             Vt100Command::MoveCursorNextLine(total) => {
                 let mut display = self.display.lock().unwrap();
-                let viewport = display.get_viewport_mut();
-                let mut cursor = viewport.get_cursor();
+                let mut cursor = display.get_cursor();
                 cursor.y = total.saturating_sub(1) as usize;
-                viewport.set_cursor(cursor);
+                display.set_cursor(cursor);
                 window_action(WindowAction::Refresh);
             },
             Vt100Command::MoveCursorPreviousLine(total) => {
                 let mut display = self.display.lock().unwrap();
-                let viewport = display.get_viewport_mut();
-                let mut cursor = viewport.get_cursor();
+                let mut cursor = display.get_cursor();
                 cursor.y = total.saturating_sub(1) as usize;
-                viewport.set_cursor(cursor);
+                display.set_cursor(cursor);
                 window_action(WindowAction::Refresh);
             },
             Vt100Command::MoveCursorHorizontalAbsolute(total) => {
                 let mut display = self.display.lock().unwrap();
-                let viewport = display.get_viewport_mut();
-                let mut cursor = viewport.get_cursor();
+                let mut cursor = display.get_cursor();
                 cursor.x = total.saturating_sub(1) as usize;
-                viewport.set_cursor(cursor);
+                display.set_cursor(cursor);
                 window_action(WindowAction::Refresh);
             },
             Vt100Command::MoveCursorVerticalAbsolute(total) => {
                 let mut display = self.display.lock().unwrap();
-                let viewport = display.get_viewport_mut();
-                let mut cursor = viewport.get_cursor();
+                let mut cursor = display.get_cursor();
                 cursor.y = total.saturating_sub(1) as usize;
-                viewport.set_cursor(cursor);
+                display.set_cursor(cursor);
                 window_action(WindowAction::Refresh);
             },
             Vt100Command::ScrollUp(_total) => {
@@ -561,8 +540,7 @@ impl TerminalUser {
             },
             TerminalUserEvent::GridResize(size) => {
                 let mut display = self.display.lock().unwrap();
-                let viewport = display.get_viewport_mut();
-                viewport.set_size(size);
+                display.set_size(size);
                 process_ioctl(TerminalIOControl::SetSize(size));
                 // Apparently this shouldnt be used when ioctl is available
                 // let mut encoder = self.encoder.lock().unwrap();
@@ -576,7 +554,7 @@ impl TerminalUser {
             },
             TerminalUserEvent::SetIsNewlineCarriageReturn(is_carriage_return) => {
                 let mut display = self.display.lock().unwrap();
-                display.set_is_newline_carriage_return(is_carriage_return);
+                display.is_newline_carriage_return = is_carriage_return;
             },
             TerminalUserEvent::MouseMove(pos) => {
                 self.mouse_position = pos;

@@ -14,6 +14,7 @@ use crate::encoder::{
     InputMode,
     KeyType,
     MouseCoordinateFormat,
+    MouseTrackingMode,
 };
 
 #[derive(Clone,Debug,PartialEq)]
@@ -73,13 +74,12 @@ pub enum Command {
     SetDarkBackground,
     SetCursorBlinking(bool),
     SetCursorVisible(bool),
-    SaveScreen,
-    RestoreScreen,
     SetReportMouseClick(bool),
     SetHighlightMouseTracking(bool),
     SetCellMouseTracking(bool),
     SetAllMouseTracking(bool),
     SetReportFocus(bool),
+    SetMouseTrackingMode(MouseTrackingMode),
     SetMouseCoordinateFormat(MouseCoordinateFormat),
     SetAlternateBuffer(bool),
     SetBracketedPasteMode(bool),

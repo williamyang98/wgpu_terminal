@@ -3,8 +3,11 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use vt100::{
     command::Command as Vt100Command,
     encoder::{
-        KeyCode,
         Encoder as Vt100Encoder,
+        KeyCode,
+        MouseButton,
+        MouseEvent,
+        MouseTrackingMode,
     },
     parser::{
         Parser as Vt100Parser, 
@@ -36,9 +39,14 @@ pub enum TerminalIOControl {
 
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
 pub enum TerminalUserEvent {
+    MousePress(MouseButton),
+    MouseRelease(MouseButton),
+    MouseMove(Vector2<usize>),
     KeyPress(KeyCode),
     KeyRelease(KeyCode),
     WindowResize(Vector2<usize>),
+    WindowFocus(bool),
+    GridResize(Vector2<usize>),
     SetIsNewlineCarriageReturn(bool),
 }
 
@@ -66,7 +74,7 @@ impl Terminal {
             window_action: builder.window_action,
         };
         let parser_thread = std::thread::spawn(move || {
-            let mut buffer = vec![0u8; 4096];
+            let mut buffer = vec![0u8; 8192];
             let mut terminal_parser = TerminalParser::default();
             loop {
                 let total_read = (builder.process_read)(buffer.as_mut_slice());
@@ -84,6 +92,7 @@ impl Terminal {
             encoder: encoder.clone(),
             process_write: builder.process_write,
             process_ioctl: builder.process_ioctl,
+            mouse_position: Vector2::new(0,0),
         };
         let user_thread = std::thread::spawn(move || {
             while let Ok(event) = user_rx.recv() {
@@ -128,6 +137,7 @@ impl TerminalParserHandler for ParserHandler {
         for b in buf {
             display.write_ascii(*b);
         }
+        drop(display);
         let window_action = &mut self.window_action;
         window_action(WindowAction::Refresh);
     }
@@ -136,6 +146,7 @@ impl TerminalParserHandler for ParserHandler {
         let window_action = &mut self.window_action;
         let mut display = self.display.lock().unwrap();
         display.write_utf8(character);
+        drop(display);
         window_action(WindowAction::Refresh);
     }
 
@@ -504,15 +515,21 @@ impl TerminalParserHandler for ParserHandler {
                 encoder.is_bracketed_paste_mode = is_bracketed;
             },
             // mouse (TODO)
-            // Vt100Command::SetHighlightMouseTracking(is_tracking) => {
-            //     let mut encoder = self.encoder.lock().unwrap();
-            // },
-            // Vt100Command::SetCellMouseTracking(is_tracking) => {
-            //     let mut encoder = self.encoder.lock().unwrap();
-            // },
-            // Vt100Command::SetAllMouseTracking(is_tracking) => {
-            //     let mut encoder = self.encoder.lock().unwrap();
-            // },
+            Vt100Command::SetMouseTrackingMode(mut mode) => {
+                if mode == MouseTrackingMode::Highlight {
+                    mode = MouseTrackingMode::Normal;
+                }
+                let mut encoder = self.encoder.lock().unwrap();
+                encoder.mouse_tracking_mode = mode;
+            },
+            Vt100Command::SetMouseCoordinateFormat(format) => {
+                let mut encoder = self.encoder.lock().unwrap();
+                encoder.mouse_coordinate_format = format;
+            },
+            Vt100Command::SetReportFocus(is_report_focus) => {
+                let mut encoder = self.encoder.lock().unwrap();
+                encoder.is_report_focus = is_report_focus;
+            },
             // window
             Vt100Command::WindowAction(action) => window_action(action),
             _ => {
@@ -532,6 +549,7 @@ struct TerminalUser {
     encoder: Arc<Mutex<Vt100Encoder>>,
     process_write: Box<dyn FnMut(&[u8]) + Send>,
     process_ioctl: Box<dyn FnMut(TerminalIOControl) + Send>,
+    mouse_position: Vector2<usize>,
 }
 
 impl TerminalUser {
@@ -548,7 +566,7 @@ impl TerminalUser {
                 let mut encoder = self.encoder.lock().unwrap();
                 encoder.on_key_release(key_code, process_write);
             },
-            TerminalUserEvent::WindowResize(size) => {
+            TerminalUserEvent::GridResize(size) => {
                 let mut display = self.display.lock().unwrap();
                 let viewport = display.get_viewport_mut();
                 viewport.set_size(size);
@@ -556,10 +574,31 @@ impl TerminalUser {
                 // Apparently this shouldnt be used when ioctl is available
                 // let mut encoder = self.encoder.lock().unwrap();
                 // encoder.set_window_size_characters(size, writer);
+                let mut encoder = self.encoder.lock().unwrap();
+                encoder.grid_size = size;
+            },
+            TerminalUserEvent::WindowResize(size) => {
+                let mut encoder = self.encoder.lock().unwrap();
+                encoder.window_size = size;
             },
             TerminalUserEvent::SetIsNewlineCarriageReturn(is_carriage_return) => {
                 let mut display = self.display.lock().unwrap();
                 display.set_is_newline_carriage_return(is_carriage_return);
+            },
+            TerminalUserEvent::MouseMove(pos) => {
+                self.mouse_position = pos;
+            },
+            TerminalUserEvent::MousePress(button) => {
+                let mut encoder = self.encoder.lock().unwrap();
+                encoder.on_mouse_event(MouseEvent::ButtonPress(button, self.mouse_position), process_write);
+            },
+            TerminalUserEvent::MouseRelease(button) => {
+                let mut encoder = self.encoder.lock().unwrap();
+                encoder.on_mouse_event(MouseEvent::ButtonRelease(button, self.mouse_position), process_write);
+            },
+            TerminalUserEvent::WindowFocus(is_focus) => {
+                let encoder = self.encoder.lock().unwrap();
+                encoder.on_window_focus(is_focus, process_write);
             },
         }
     }

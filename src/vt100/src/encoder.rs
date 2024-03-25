@@ -32,18 +32,6 @@ impl KeyType {
     }
 }
 
-#[derive(Clone,Copy,Debug,PartialEq,Eq)]
-pub enum MouseCoordinateFormat {
-    // https://invisible-island.net/xterm/ctlseqs/ctlseqs.html#h2-Mouse-Tracking
-    // https://invisible-island.net/xterm/ctlseqs/ctlseqs.html#h3-Extended-coordinates
-    X10,
-    Normal,
-    Utf8,
-    Sgr,
-    Urxvt,
-    SgrPixel,
-}
-
 bitflags! {
     #[derive(Clone,Copy,Debug,Default,PartialEq,Eq)]
     pub struct ModifierKey: u8 {
@@ -51,24 +39,8 @@ bitflags! {
         const Ctrl  = 0b0000_0001;
         const Shift = 0b0000_0010;
         const Alt   = 0b0000_0100;
+        const Meta  = 0b0000_1000;
         const _ = 0u8;
-    }
-}
-
-#[derive(Clone,Copy,Debug,PartialEq,Eq)]
-pub enum MouseButtonEvent {
-    LeftClick,
-    RightClick,
-    MiddleClick,
-}
-
-impl MouseButtonEvent {
-    fn to_event_code(&self) -> u8 {
-        match self {
-            Self::LeftClick => 0,
-            Self::RightClick => 1,
-            Self::MiddleClick => 2,
-        }
     }
 }
 
@@ -98,13 +70,84 @@ pub enum KeyCode {
     ModifierKey(ModifierKey),
 }
 
+#[derive(Clone,Copy,Default,Debug,PartialEq,Eq)]
+pub enum MouseTrackingMode {
+    #[default]
+    Disabled,
+    X10,
+    Normal,
+    Highlight,
+    Motion,
+    Any,
+}
+
+#[derive(Clone,Copy,Debug,PartialEq,Eq)]
+pub enum MouseCoordinateFormat {
+    // https://invisible-island.net/xterm/ctlseqs/ctlseqs.html#h2-Mouse-Tracking
+    // https://invisible-island.net/xterm/ctlseqs/ctlseqs.html#h3-Extended-coordinates
+    X10,
+    Utf8,
+    Sgr,
+    Urxvt,
+    SgrPixel,
+}
+
+#[derive(Clone,Copy,Debug,PartialEq,Eq)]
+pub enum MouseButton {
+    LeftClick,
+    RightClick,
+    MiddleClick,
+    WheelUp,
+    WheelDown,
+    WheelLeft,
+    WheelRight,
+}
+
+// get the position in pixels within the terminal window
+#[derive(Clone,Copy,Debug,PartialEq,Eq)]
+pub enum MouseEvent {
+    ButtonPress(MouseButton, Vector2<usize>),
+    ButtonRelease(MouseButton, Vector2<usize>),
+}
+
+bitflags! {
+    #[derive(Clone,Copy,Debug,Default,PartialEq,Eq)]
+    struct ActiveMouseButtons: u8 {
+        const None        = 0b0000_0001;
+        const LeftClick   = 0b0000_0001;
+        const RightClick  = 0b0000_0010;
+        const MiddleClick = 0b0000_0100;
+        const WheelUp     = 0b0000_1000;
+        const WheelDown   = 0b0001_0000;
+        const WheelLeft   = 0b0010_0000;
+        const WheelRight  = 0b0100_0000;
+        const _ = 0u8;
+    }
+}
+
+fn mouse_button_to_flag(button: MouseButton) -> ActiveMouseButtons {
+    match button {
+        MouseButton::LeftClick => ActiveMouseButtons::LeftClick,
+        MouseButton::RightClick => ActiveMouseButtons::RightClick,
+        MouseButton::MiddleClick => ActiveMouseButtons::MiddleClick,
+        MouseButton::WheelUp => ActiveMouseButtons::WheelUp,
+        MouseButton::WheelDown => ActiveMouseButtons::WheelDown,
+        MouseButton::WheelLeft => ActiveMouseButtons::WheelLeft,
+        MouseButton::WheelRight => ActiveMouseButtons::WheelRight,
+    }
+}
+
 pub struct Encoder {
-    pub is_bracketed_paste_mode: bool,
     pub modifier_key: ModifierKey,
     pub keypad_input_mode: InputMode,
     pub cursor_key_input_mode: InputMode,
-    pub is_mouse_button_event: bool,
+    pub mouse_tracking_mode: MouseTrackingMode,
+    pub mouse_coordinate_format: MouseCoordinateFormat,
+    pub window_size: Vector2<usize>,
+    pub grid_size: Vector2<usize>,
+    pub is_bracketed_paste_mode: bool,
     pub is_report_focus: bool,
+    active_mouse_buttons: ActiveMouseButtons,
     utf8_encode_buffer: [u8;4],
     encode_buffer: Vec<u8>,
 }
@@ -112,46 +155,23 @@ pub struct Encoder {
 impl Default for Encoder {
     fn default() -> Self {
         Self {
-            is_bracketed_paste_mode: false,
             modifier_key: ModifierKey::None,
             keypad_input_mode: InputMode::Numeric,
             cursor_key_input_mode: InputMode::Numeric,
-            is_mouse_button_event: false,
+            mouse_tracking_mode: MouseTrackingMode::Disabled,
+            mouse_coordinate_format: MouseCoordinateFormat::X10,
+            window_size: Vector2::new(1,1),
+            grid_size: Vector2::new(1,1),
+            is_bracketed_paste_mode: false,
             is_report_focus: false,
+            active_mouse_buttons: ActiveMouseButtons::None,
             utf8_encode_buffer: [0u8; 4],
-            encode_buffer: Vec::new(),
+            encode_buffer: Vec::with_capacity(256),
         }
     }
-
 }
 
 impl Encoder {
-    pub fn on_mouse_button(&mut self, pos: Vector2<usize>, event: MouseButtonEvent, output: &mut impl FnMut(&[u8])) {
-        if !self.is_mouse_button_event {
-            return;
-        }
-        // https://invisible-island.net/xterm/ctlseqs/ctlseqs.html#h3-Button-event-tracking
-        // TODO:
-        // self.encode_buffer.clear();
-        // write!(&mut self.encode_buffer, b"\x1b[M");
-        // let code = event.to_event_code() + 32u8;
-        // let _ = self.encode_buffer.write_all(&[code]);
-        // write!(&mut self.encode_buffer, b"{}{}");
-        // output(self.encode_buffer.as_slice());
-    }
-
-    pub fn on_window_focus(&self, is_focus: bool, output: &mut impl FnMut(&[u8])) {
-        if !self.is_report_focus {
-            return;
-        }
-        // https://invisible-island.net/xterm/ctlseqs/ctlseqs.html#h3-FocusIn_FocusOut
-        if is_focus {
-            output(b"\x1b[I");
-        } else {
-            output(b"\x1b[O");
-        }
-    }
-
     pub fn on_key_press(&mut self, key_code: KeyCode, output: &mut impl FnMut(&[u8])) {
         match key_code {
             KeyCode::Char(c) => self.on_character(c, output),
@@ -161,7 +181,7 @@ impl Encoder {
         }
     }
 
-    pub fn on_key_release(&mut self, key_code: KeyCode, output: &mut impl FnMut(&[u8])) {
+    pub fn on_key_release(&mut self, key_code: KeyCode, _output: &mut impl FnMut(&[u8])) {
         if let KeyCode::ModifierKey(key) = key_code {
             self.modifier_key.remove(key);
         }
@@ -279,13 +299,159 @@ impl Encoder {
         output(data);
     }
 
-    pub fn paste_text(&mut self, buf: &[u8], output: &mut impl FnMut(&[u8])) {
-        if self.is_bracketed_paste_mode {
-            output(b"\x1b[200~"); 
-            output(buf);
-            output(b"\x1b[201~"); 
+    pub fn on_mouse_event(&mut self, event: MouseEvent, output: &mut impl FnMut(&[u8])) {
+        // https://invisible-island.net/xterm/ctlseqs/ctlseqs.html#h3-Button-event-tracking
+        // https://invisible-island.net/xterm/ctlseqs/ctlseqs.html#h3-Extended-coordinates
+        // https://invisible-island.net/xterm/ctlseqs/ctlseqs.html#h2-Mouse-Tracking
+        // (1,1) is the top,left corner
+        self.encode_buffer.clear();
+        match event {
+            MouseEvent::ButtonPress(button, _) => self.active_mouse_buttons.insert(mouse_button_to_flag(button)),
+            MouseEvent::ButtonRelease(button, _) => self.active_mouse_buttons.remove(mouse_button_to_flag(button)),
+        }
+        match self.mouse_tracking_mode {
+            MouseTrackingMode::Disabled => {},
+            MouseTrackingMode::X10 => {
+                if let MouseEvent::ButtonPress(button, position) = event {
+                    let event_code: u8 = match button {
+                        // https://invisible-island.net/xterm/ctlseqs/ctlseqs.html#h3-X10-compatibility-mode
+                        MouseButton::LeftClick   => 0,
+                        MouseButton::RightClick  => 1,
+                        MouseButton::MiddleClick => 2,
+                        // https://invisible-island.net/xterm/ctlseqs/ctlseqs.html#h3-Wheel-mice
+                        MouseButton::WheelUp     => 0+64,
+                        MouseButton::WheelDown   => 1+64,
+                        MouseButton::WheelLeft   => 2+64,
+                        MouseButton::WheelRight  => 3+64,
+                    };
+                    self.encode_buffer.extend_from_slice(b"\x1b[M");
+                    self.encode_buffer.push(event_code);
+                    let format = match self.mouse_coordinate_format {
+                        MouseCoordinateFormat::Utf8 => MouseCoordinateFormat::Utf8,
+                        _ => MouseCoordinateFormat::X10,
+                    };
+                    self.encode_mouse_position(position, format);
+                    output(self.encode_buffer.as_slice());
+                }
+            },
+            MouseTrackingMode::Normal | MouseTrackingMode::Motion | MouseTrackingMode::Any => {
+                // let report_motion_event =
+                //     (self.mouse_tracking_mode == MouseTrackingMode::Motion && !self.active_mouse_buttons.is_empty()) ||
+                //     (self.mouse_tracking_mode == MouseTrackingMode::Any);
+                let report_motion_event = false;
+                let (mut button_event_code, is_pressed, position) = match event {
+                    MouseEvent::ButtonPress(button, position) => {
+                        let mut data = 0u8;
+                        match button {
+                            MouseButton::LeftClick   => { data |= 0b0000_0000; },
+                            MouseButton::RightClick  => { data |= 0b0000_0001; },
+                            MouseButton::MiddleClick => { data |= 0b0000_0010; },
+                            _ => return, // no encoding for this
+                        }
+                        (data, true, position)
+                    },
+                    MouseEvent::ButtonRelease(_, position) => {
+                        let data = 0b0000_0011;
+                        (data, false, position)
+                    },
+                };
+                if self.modifier_key.contains(ModifierKey::Shift) { button_event_code |= 0b0000_0100; }
+                if self.modifier_key.contains(ModifierKey::Meta)  { button_event_code |= 0b0000_1000; }
+                if self.modifier_key.contains(ModifierKey::Ctrl)  { button_event_code |= 0b0001_0000; }
+                if report_motion_event { 
+                    button_event_code |= 0b0010_0000; 
+                }
+                match self.mouse_coordinate_format {
+                    MouseCoordinateFormat::X10 | MouseCoordinateFormat::Utf8 => {
+                        self.encode_buffer.extend_from_slice(b"\x1b[M");
+                        button_event_code += 32; // used to make sure that it is an ascii character
+                        self.encode_buffer.push(button_event_code);
+                        self.encode_mouse_position(position, self.mouse_coordinate_format);
+                        output(self.encode_buffer.as_slice());
+                    },
+                    MouseCoordinateFormat::Sgr | MouseCoordinateFormat::SgrPixel => {
+                        self.encode_buffer.extend_from_slice(b"\x1b[<");
+                        let _ = write!(&mut self.encode_buffer, "{}", button_event_code);
+                        self.encode_buffer.push(b';');
+                        self.encode_mouse_position(position, self.mouse_coordinate_format);
+                        if is_pressed {
+                            self.encode_buffer.push(b'M');
+                        } else {
+                            self.encode_buffer.push(b'm');
+                        }
+                        output(self.encode_buffer.as_slice());
+                    },
+                    MouseCoordinateFormat::Urxvt => {
+                        self.encode_buffer.extend_from_slice(b"\x1b[");
+                        let _ = write!(&mut self.encode_buffer, "{}", button_event_code);
+                        self.encode_buffer.push(b';');
+                        self.encode_mouse_position(position, self.mouse_coordinate_format);
+                        self.encode_buffer.push(b'M');
+                        output(self.encode_buffer.as_slice());
+                    },
+                }
+            },
+            MouseTrackingMode::Highlight => {
+                // TODO: highlight tracking (this seems very complicated for just highlight text???)
+                // if button press or release generate normal mode events
+                // Warning: this mode requires a cooperating program, else xterm will hang.
+                //          the program should respond with ESC[#;#;#;#;#T where 
+                //          #1: 0 = exit highlight, >0 = start highlight
+                //          #2: start.x
+                //          #3: start.y
+                //          #4: start_row
+                //          #5: end_row
+                // let mut is_highlight_tracking = true;
+                // let mut is_mouse_left_click = true;
+                // let mut start_highlight_position = None;
+                // let mut last_highlight_position = None;
+                // if let MouseEvent::Move(position) = event {
+                //     if start_highlight_position.is_none() {
+                //         start_highlight_position = position;
+                //     }
+                // }
+            }
+        }
+    }
+
+    fn encode_mouse_position(&mut self, pos: Vector2<usize>, format: MouseCoordinateFormat) {
+        // https://invisible-island.net/xterm/ctlseqs/ctlseqs.html#h3-Extended-coordinates
+        let glyph_size = Vector2::new(
+            self.window_size.x.div_ceil(self.grid_size.x.max(1)).max(1),
+            self.window_size.y.div_ceil(self.grid_size.y.max(1)).max(1),
+        );
+        // (1,1) is the origin point
+        let grid_pos = Vector2::new(
+            (pos.x/glyph_size.x)+1,
+            (pos.y/glyph_size.y)+1,
+        );
+        match format {
+            MouseCoordinateFormat::X10 => {
+                // x10 adds 32 to everything so that it is within ascii range for some reason
+                self.encode_buffer.push((grid_pos.x+32).min(255) as u8);
+                self.encode_buffer.push((grid_pos.y+32).min(255) as u8);
+            },
+            MouseCoordinateFormat::Utf8 => {
+                
+            },
+            MouseCoordinateFormat::Sgr | MouseCoordinateFormat::Urxvt => {
+                let _ = write!(&mut self.encode_buffer, "{};{}", grid_pos.x, grid_pos.y);
+            },
+            MouseCoordinateFormat::SgrPixel => {
+                let _ = write!(&mut self.encode_buffer, "{};{}", pos.x, pos.y);
+            },
+        }
+    }
+
+    pub fn on_window_focus(&self, is_focus: bool, output: &mut impl FnMut(&[u8])) {
+        if !self.is_report_focus {
+            return;
+        }
+        // https://invisible-island.net/xterm/ctlseqs/ctlseqs.html#h3-FocusIn_FocusOut
+        if is_focus {
+            output(b"\x1b[I");
         } else {
-            output(buf);
+            output(b"\x1b[O");
         }
     }
 
@@ -294,6 +460,17 @@ impl Encoder {
         self.encode_buffer.clear();
         if write!(&mut self.encode_buffer, "\x1b[18;{};{}t", size.x, size.y).is_ok() {
             output(self.encode_buffer.as_slice());
+        }
+    }
+
+    pub fn paste_text(&mut self, buf: &[u8], output: &mut impl FnMut(&[u8])) {
+        // https://invisible-island.net/xterm/ctlseqs/ctlseqs.html#h2-Bracketed-Paste-Mode
+        if self.is_bracketed_paste_mode {
+            output(b"\x1b[200~"); 
+            output(buf);
+            output(b"\x1b[201~"); 
+        } else {
+            output(buf);
         }
     }
 }

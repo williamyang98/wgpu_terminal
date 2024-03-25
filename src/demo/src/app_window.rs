@@ -12,7 +12,7 @@ use terminal::{
     terminal_renderer::TerminalRenderer,
 };
 use winit::{
-    event::{Event, WindowEvent, ElementState},
+    event::{Event, WindowEvent, ElementState, MouseButton},
     keyboard::{KeyCode,PhysicalKey,Key},
     event_loop::EventLoopWindowTarget,
     window::Window,
@@ -119,9 +119,15 @@ impl<'a> AppWindow<'a> {
                 WindowEvent::CloseRequested => target.exit(),
                 WindowEvent::MouseWheel { delta, .. } => self.on_mouse_wheel(delta),
                 WindowEvent::KeyboardInput { event, .. } => self.on_keyboard_input(event),
+                WindowEvent::MouseInput { state, button, .. } => self.on_mouse_input(button, state),
+                WindowEvent::Focused(is_focused) => self.on_focus(is_focused),
                 WindowEvent::Resized(new_size) => {
                     let new_size = Vector2::new(new_size.width as usize, new_size.height as usize);
                     self.on_resize(new_size);
+                },
+                WindowEvent::CursorMoved { position, .. } => {
+                    let position = Vector2::new(position.x.max(0.0) as usize, position.y.max(0.0) as usize);
+                    self.on_cursor_move(position);
                 },
                 WindowEvent::RedrawRequested => self.on_redraw_requested(),
                 _ => {
@@ -144,6 +150,21 @@ impl<'a> AppWindow<'a> {
         }
     }
 
+    fn on_mouse_input(&mut self, button: MouseButton, state: ElementState) {
+        use vt100::encoder::{MouseButton as TMouseButton};
+        let button = match button {
+            MouseButton::Left => TMouseButton::LeftClick,
+            MouseButton::Right => TMouseButton::RightClick,
+            MouseButton::Middle => TMouseButton::MiddleClick,
+            _ => return,
+        };
+        let event = match state {
+            ElementState::Pressed => TerminalUserEvent::MousePress(button),
+            ElementState::Released => TerminalUserEvent::MouseRelease(button),
+        };
+        self.terminal_user_events.send(event).unwrap();
+    }
+
     fn on_window_action(&mut self, action: WindowAction) {
         match action {
             WindowAction::SetWindowTitle(title) => self.winit_window.set_title(title.as_str()),
@@ -152,6 +173,14 @@ impl<'a> AppWindow<'a> {
                 log::info!("Unhandled: {:?}", action);
             }
         }
+    }
+
+    fn on_cursor_move(&mut self, pos: Vector2<usize>) {
+        self.terminal_user_events.send(TerminalUserEvent::MouseMove(pos)).unwrap();
+    }
+
+    fn on_focus(&mut self, is_focus: bool) {
+        self.terminal_user_events.send(TerminalUserEvent::WindowFocus(is_focus)).unwrap();
     }
 
     fn on_mouse_wheel(&mut self, delta: winit::event::MouseScrollDelta) {
@@ -188,7 +217,8 @@ impl<'a> AppWindow<'a> {
         let new_render_scale = actual_render_size.cast::<f32>().unwrap().div_element_wise(new_size.cast::<f32>().unwrap());
         // update gpu
         self.renderer.update_render_scale(&self.wgpu_queue, new_render_scale);
-        self.terminal_user_events.send(TerminalUserEvent::WindowResize(new_grid_size)).unwrap();
+        self.terminal_user_events.send(TerminalUserEvent::WindowResize(actual_render_size)).unwrap();
+        self.terminal_user_events.send(TerminalUserEvent::GridResize(new_grid_size)).unwrap();
         self.trigger_redraw();
     }
 

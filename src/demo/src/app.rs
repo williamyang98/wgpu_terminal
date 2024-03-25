@@ -61,7 +61,7 @@ pub fn start_app(builder: AppBuilder) -> anyhow::Result<()> {
             if action == WindowAction::Refresh && is_refresh_trigger.fetch_or(true, Ordering::SeqCst) {
                 return;
             }
-            event_loop_proxy.send_event(AppEvent::WindowAction(action)).unwrap();
+            let _ = event_loop_proxy.send_event(AppEvent::WindowAction(action));
         }
     };
     terminal_builder.window_action = Box::new(window_action);
@@ -105,7 +105,7 @@ pub fn start_headless(builder: AppBuilder) -> anyhow::Result<()> {
         let user_events = terminal.get_user_event_handler();
         let is_carriage_return = process.lock().unwrap().is_newline_carriage_return();
         user_events.send(TerminalUserEvent::SetIsNewlineCarriageReturn(is_carriage_return)).unwrap();
-        user_events.send(TerminalUserEvent::WindowResize(Vector2::new(100,32))).unwrap();
+        user_events.send(TerminalUserEvent::GridResize(Vector2::new(100,32))).unwrap();
     }
     terminal.join_parser_thread();
     let _ = process.lock().unwrap().terminate();

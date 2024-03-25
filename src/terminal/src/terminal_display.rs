@@ -153,16 +153,19 @@ impl TerminalDisplay {
         }
     }
 
+    #[inline]
     pub fn write_utf8(&mut self, character: char) {
         let mut cell = Cell { character, ..Cell::default() };
         self.pen.colour_in_cell(&mut cell);
         self.viewport.write_cell(&cell);
     }
 
+    #[inline]
     pub fn get_colour_from_table(&self, index: u8) -> Rgb8 {
         self.colour_table[index as usize]
     }
-
+ 
+    #[inline]
     pub fn write_ascii(&mut self, b: u8) {
         match b {
             b'\n' => {

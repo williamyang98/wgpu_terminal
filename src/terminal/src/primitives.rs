@@ -33,6 +33,7 @@ pub struct Pen {
 }
 
 impl Pen {
+    #[inline]
     pub fn colour_in_cell(&self, cell: &mut Cell) {
         cell.background_colour = self.background_colour;
         cell.foreground_colour = self.foreground_colour;

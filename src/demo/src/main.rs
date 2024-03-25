@@ -18,6 +18,7 @@ enum Mode {
 #[command(author, version, about, long_about = None)]
 struct Args {
     /// Filepath of shell executable
+    #[arg(default_value = "cmd.exe")]
     filename: String,
     /// Filepath arguments
     arguments: Vec<String>,
@@ -43,6 +44,7 @@ fn main() -> anyhow::Result<()> {
 
     simple_logger::SimpleLogger::new()
         .env()
+        .with_level(log::LevelFilter::Error)
         .with_colors(true)
         .without_timestamps()
         .init()?;

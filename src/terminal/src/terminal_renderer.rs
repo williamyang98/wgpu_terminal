@@ -1,4 +1,4 @@
-use crate::viewport::Viewport;
+use crate::terminal_display::TerminalDisplay;
 use crate::primitives::Cell;
 use cgmath::Vector2;
 
@@ -42,7 +42,8 @@ impl TerminalRenderer {
         self.cells.resize(total_cells, Cell::default());
     }
 
-    pub fn render_viewport(&mut self, viewport: &Viewport) {
+    pub fn render_display(&mut self, display: &TerminalDisplay) {
+        let viewport = display.get_viewport();
         let scrollback_buffer = viewport.get_scrollback_buffer();
         let scrollback_buffer_lines = scrollback_buffer.get_lines();
         let size = viewport.get_size();
@@ -59,7 +60,10 @@ impl TerminalRenderer {
                 }
             },
         };
-        self.cells.fill(Cell::default());
+        let default_pen = display.default_pen;
+        let mut default_cell = Cell::default();
+        default_pen.colour_in_cell(&mut default_cell);
+        self.cells.fill(default_cell);
 
         let mut cursor: Vector2<usize> = Vector2::new(0,0);
         // render scrollback buffer
@@ -96,8 +100,11 @@ impl TerminalRenderer {
             assert!(status.length <= size.x);
             let dst_index = cursor.y*size.x;
             let dst_row = &mut self.cells[dst_index..(dst_index+size.x)];
-            dst_row.copy_from_slice(src_row);
-            dst_row[status.length..].iter_mut().for_each(|c| c.character = ' ');
+            dst_row[..status.length].copy_from_slice(&src_row[..status.length]);
+            dst_row[status.length..].iter_mut().for_each(|c| {
+                c.character = ' ';
+                default_pen.colour_in_cell(c);
+            });
             // TODO: render cursor properly with all the different styles
             if y == viewport_cursor.y {
                 let x = viewport_cursor.x.min(size.x-1);

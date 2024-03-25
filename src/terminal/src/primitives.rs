@@ -17,12 +17,23 @@ bitflags! {
     }
 }
 
-#[derive(Clone,Copy,Default,Debug,PartialEq,Eq)]
+#[derive(Clone,Copy,Debug,PartialEq,Eq)]
 pub struct Cell {
     pub character: char, // 4
     pub background_colour: Rgb8, // 3
     pub foreground_colour: Rgb8, // 3
     pub style_flags: StyleFlags, // 1
+}
+
+impl Default for Cell {
+    fn default() -> Self {
+        Self {
+            character: ' ',
+            background_colour: Rgb8 { r:0, g:0, b:0 },
+            foreground_colour: Rgb8 { r:255, g:255, b:255 },
+            style_flags: StyleFlags::None,
+        }
+    }
 }
 
 #[derive(Clone,Copy,Default,Debug,PartialEq,Eq)]

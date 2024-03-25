@@ -32,12 +32,12 @@ impl Default for CursorStatus {
 #[derive(Clone,Debug)]
 pub struct TerminalDisplay {
     viewport: Viewport,
-    cursor_status: CursorStatus,
     saved_cursor: Option<Vector2<usize>>,
-    pen: Pen,
-    default_pen: Pen,
     colour_table: Vec<Rgb8>,
-    is_newline_carriage_return: bool, // if true then \n will also set cursor.x = 0
+    pub(crate) cursor_status: CursorStatus,
+    pub(crate) pen: Pen,
+    pub(crate) default_pen: Pen,
+    pub(crate) is_newline_carriage_return: bool, // if true then \n will also set cursor.x = 0
 }
 
 impl Default for TerminalDisplay {
@@ -78,14 +78,6 @@ impl TerminalDisplay {
 
     pub fn get_viewport_mut(&mut self) -> &mut Viewport {
         &mut self.viewport
-    }
-
-    pub fn get_pen(&self) -> &Pen {
-        &self.pen
-    }
-
-    pub fn get_pen_mut(&mut self) -> &mut Pen {
-        &mut self.pen
     }
 
     pub fn set_graphic_style(&mut self, style: GraphicStyle) {
@@ -200,13 +192,5 @@ impl TerminalDisplay {
             Some(cursor) => self.viewport.set_cursor(cursor),
             None => log::warn!("tried to restore nonexistent cursor from memory"),
         }
-    }
-
-    pub fn get_cursor_status(&self) -> &CursorStatus {
-        &self.cursor_status
-    }
-
-    pub(crate) fn get_cursor_status_mut(&mut self) -> &mut CursorStatus {
-        &mut self.cursor_status
     }
 }

@@ -239,7 +239,7 @@ impl<'a> AppWindow<'a> {
         self.current_frame += 1;
         self.frame_counter.update();
         let display = self.terminal.get_display();
-        self.terminal_renderer.render_viewport(display.get_viewport());
+        self.terminal_renderer.render_display(&*display);
  
         let size = self.terminal_renderer.get_size();
         let cells = self.terminal_renderer.get_cells();

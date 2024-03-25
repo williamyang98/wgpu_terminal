@@ -112,7 +112,7 @@ pub fn start_headless(builder: AppBuilder) -> anyhow::Result<()> {
 
     let mut terminal_renderer = TerminalRenderer::default();
     let display = terminal.get_display();
-    terminal_renderer.render_viewport(display.get_viewport());
+    terminal_renderer.render_display(&*display);
     let size = terminal_renderer.get_size();
     let cells = terminal_renderer.get_cells();
     let mut tmp_buf = [0u8; 4];

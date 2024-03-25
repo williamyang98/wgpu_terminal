@@ -171,7 +171,6 @@ impl TerminalParserHandler for ParserHandler {
             },
             Vt100Command::SetBackgroundColourRgb(rgb) => {
                 let mut display = self.display.lock().unwrap();
-                let pen = display.get_pen_mut();
                 // FIXME: Why is the background so bright???
                 const A: u8 = 7;
                 let rgb = Rgb8 { 
@@ -179,11 +178,10 @@ impl TerminalParserHandler for ParserHandler {
                     g: rgb.g / A,
                     b: rgb.b / A,
                 };
-                pen.background_colour = rgb;
+                display.pen.background_colour = rgb;
             },
             Vt100Command::SetForegroundColourRgb(rgb) => {
                 let mut display = self.display.lock().unwrap();
-                let pen = display.get_pen_mut();
                 // FIXME: Why is the foreground so desaturated???
                 const A: u8 = 20;
                 let rgb = Rgb8 { 
@@ -191,25 +189,23 @@ impl TerminalParserHandler for ParserHandler {
                     g: rgb.g.saturating_sub(A),
                     b: rgb.b.saturating_sub(A),
                 };
-                pen.foreground_colour = rgb;
+                display.pen.foreground_colour = rgb;
             },
             Vt100Command::SetBackgroundColourTable(index) => {
                 let mut display = self.display.lock().unwrap();
                 let colour = display.get_colour_from_table(index);
-                let pen = display.get_pen_mut();
-                pen.background_colour = colour;
+                display.pen.background_colour = colour;
             },
             Vt100Command::SetForegroundColourTable(index) => {
                 let mut display = self.display.lock().unwrap();
                 let colour = display.get_colour_from_table(index);
-                let pen = display.get_pen_mut();
-                pen.foreground_colour = colour;
+                display.pen.foreground_colour = colour;
             },
             // erase data
             Vt100Command::EraseInDisplay(mode) => match mode {
                 EraseMode::FromCursorToEnd => {
                     let mut display = self.display.lock().unwrap();
-                    let pen = *display.get_pen();
+                    let pen = display.pen;
                     let viewport = display.get_viewport_mut();
                     let size = viewport.get_size();
                     let cursor = viewport.get_cursor();
@@ -231,7 +227,7 @@ impl TerminalParserHandler for ParserHandler {
                 },
                 EraseMode::FromCursorToStart => {
                     let mut display = self.display.lock().unwrap();
-                    let pen = *display.get_pen();
+                    let pen = display.pen;
                     let viewport = display.get_viewport_mut();
                     let size = viewport.get_size();
                     let cursor = viewport.get_cursor();
@@ -253,7 +249,7 @@ impl TerminalParserHandler for ParserHandler {
                 },
                 EraseMode::EntireDisplay | EraseMode::SavedLines => {
                     let mut display = self.display.lock().unwrap();
-                    let pen = *display.get_pen();
+                    let pen = display.pen;
                     let viewport = display.get_viewport_mut();
                     let size = viewport.get_size();
                     for y in 0..size.y {
@@ -271,7 +267,7 @@ impl TerminalParserHandler for ParserHandler {
             Vt100Command::EraseInLine(mode) => match mode {
                 EraseMode::FromCursorToEnd => {
                     let mut display = self.display.lock().unwrap();
-                    let pen = *display.get_pen();
+                    let pen = display.pen;
                     let viewport = display.get_viewport_mut();
                     let size = viewport.get_size();
                     let cursor = viewport.get_cursor();
@@ -286,7 +282,7 @@ impl TerminalParserHandler for ParserHandler {
                 },
                 EraseMode::FromCursorToStart => {
                     let mut display = self.display.lock().unwrap();
-                    let pen = *display.get_pen();
+                    let pen = display.pen;
                     let viewport = display.get_viewport_mut();
                     let cursor = viewport.get_cursor();
                     let (line, _) = viewport.get_row_mut(cursor.y);
@@ -298,7 +294,7 @@ impl TerminalParserHandler for ParserHandler {
                 },
                 EraseMode::EntireDisplay | EraseMode::SavedLines => {
                     let mut display = self.display.lock().unwrap();
-                    let pen = *display.get_pen();
+                    let pen = display.pen;
                     let viewport = display.get_viewport_mut();
                     let size = viewport.get_size();
                     let cursor = viewport.get_cursor();
@@ -314,7 +310,7 @@ impl TerminalParserHandler for ParserHandler {
             },
             Vt100Command::ReplaceWithSpaces(total) => {
                 let mut display = self.display.lock().unwrap();
-                let pen = *display.get_pen();
+                let pen = display.pen;
                 let viewport = display.get_viewport_mut();
                 let cursor = viewport.get_cursor();
                 let (line, _) = viewport.get_row_mut(cursor.y);
@@ -328,7 +324,7 @@ impl TerminalParserHandler for ParserHandler {
             },
             Vt100Command::InsertSpaces(total) => {
                 let mut display = self.display.lock().unwrap();
-                let pen = *display.get_pen();
+                let pen = display.pen;
                 let viewport = display.get_viewport_mut();
                 let cursor = viewport.get_cursor();
                 let (line, status) = viewport.get_row_mut(cursor.y);
@@ -485,20 +481,17 @@ impl TerminalParserHandler for ParserHandler {
             // cursor status
             Vt100Command::SetCursorBlinking(is_blink) => {
                 let mut display = self.display.lock().unwrap();
-                let cursor = display.get_cursor_status_mut();
-                cursor.is_blinking = is_blink;
+                display.cursor_status.is_blinking = is_blink;
                 window_action(WindowAction::Refresh);
             },
             Vt100Command::SetCursorVisible(is_visible) => {
                 let mut display = self.display.lock().unwrap();
-                let cursor = display.get_cursor_status_mut();
-                cursor.is_visible = is_visible;
+                display.cursor_status.is_visible = is_visible;
                 window_action(WindowAction::Refresh);
             },
             Vt100Command::SetCursorStyle(style) => {
                 let mut display = self.display.lock().unwrap();
-                let cursor = display.get_cursor_status_mut();
-                cursor.style = style;
+                display.cursor_status.style = style;
                 window_action(WindowAction::Refresh);
             },
             // keyboard

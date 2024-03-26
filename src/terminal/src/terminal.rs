@@ -539,6 +539,7 @@ impl TerminalUser {
                 encoder.on_key_release(key_code, process_write);
             },
             TerminalUserEvent::GridResize(size) => {
+                let size = Vector2::new(size.x.max(1), size.y.max(1));
                 let mut display = self.display.lock().unwrap();
                 display.set_size(size);
                 process_ioctl(TerminalIOControl::SetSize(size));
@@ -549,6 +550,7 @@ impl TerminalUser {
                 encoder.grid_size = size;
             },
             TerminalUserEvent::WindowResize(size) => {
+                let size = Vector2::new(size.x.max(1), size.y.max(1));
                 let mut encoder = self.encoder.lock().unwrap();
                 encoder.window_size = size;
             },

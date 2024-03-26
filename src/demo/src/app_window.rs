@@ -54,7 +54,7 @@ impl<'a> AppWindow<'a> {
             dx12_shader_compiler: wgpu::util::dx12_shader_compiler_from_env().unwrap_or_default(),
             gles_minor_version: wgpu::util::gles_minor_version_from_env().unwrap_or_default(),
         });
-        let wgpu_surface = wgpu_instance.create_surface(winit_window).unwrap();
+        let wgpu_surface = wgpu_instance.create_surface(winit_window)?;
         let wgpu_adapter = wgpu_instance
             .request_adapter(&wgpu::RequestAdapterOptions {
                 power_preference: wgpu::PowerPreference::default(),
@@ -239,7 +239,7 @@ impl<'a> AppWindow<'a> {
         self.current_frame += 1;
         self.frame_counter.update();
         let display = self.terminal.get_display();
-        self.terminal_renderer.render_display(&*display);
+        self.terminal_renderer.render_display(&display);
  
         let size = self.terminal_renderer.get_size();
         let cells = self.terminal_renderer.get_cells();

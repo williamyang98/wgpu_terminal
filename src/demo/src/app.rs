@@ -23,13 +23,21 @@ fn create_default_terminal_builder(process: Arc<Mutex<Box<dyn TerminalProcess + 
     let process_read = {
         let mut read_pipe = process.lock().unwrap().get_read_pipe();
         move |data: &mut [u8]| {
-            read_pipe.read(data).unwrap_or(0)
+            match read_pipe.read(data) {
+                Ok(total) => total,
+                Err(err) => {
+                    log::info!("Terminal process read pipe failed: {:?}", err);
+                    0
+                }
+            }
         }
     };
     let process_write = {
         let mut write_pipe = process.lock().unwrap().get_write_pipe();
         move |data: &[u8]| {
-            write_pipe.write_all(data).unwrap();
+            if let Err(err) = write_pipe.write_all(data) {
+                log::info!("Terminal process write pipe failed: {:?}", err);
+            }
         }
     };
     let process_ioctl = {
@@ -94,6 +102,10 @@ pub fn start_app(builder: AppBuilder) -> anyhow::Result<()> {
             terminal_window.on_winit_event(event, target);
         }
     })?;
+    match process.lock().unwrap().terminate() {
+        Ok(()) => log::info!("Process terminated successfully"), 
+        Err(err) => log::error!("Process failed to be terminated: {:?}", err),
+    }
     Ok(())
 }
 
@@ -108,11 +120,14 @@ pub fn start_headless(builder: AppBuilder) -> anyhow::Result<()> {
         user_events.send(TerminalUserEvent::GridResize(Vector2::new(100,32))).unwrap();
     }
     terminal.join_parser_thread();
-    let _ = process.lock().unwrap().terminate();
+    match process.lock().unwrap().terminate() {
+        Ok(()) => log::info!("Process terminated successfully"),
+        Err(err) => log::error!("Process failed to be terminated: {:?}", err),
+    }
 
     let mut terminal_renderer = TerminalRenderer::default();
     let display = terminal.get_display();
-    terminal_renderer.render_display(&*display);
+    terminal_renderer.render_display(&display);
     let size = terminal_renderer.get_size();
     let cells = terminal_renderer.get_cells();
     let mut tmp_buf = [0u8; 4];

@@ -123,7 +123,7 @@ impl ScrollbackBuffer {
         let line = &mut self.lines[line_index];
         line.length += data.len();
         if line.length > self.cells.len() {
-            let total_override = self.cells.len() - line.length;
+            let total_override = line.length - self.cells.len();
             line.length = self.cells.len();
             line.start = (line.start + total_override) % self.cells.len();
         }

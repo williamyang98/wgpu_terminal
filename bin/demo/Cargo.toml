@@ -7,13 +7,13 @@ edition = "2021"
 bytemuck = { workspace = true, features = ["derive" ] }
 cgmath = { workspace = true, features = ["bytemuck"] }
 # terminal
-vt100 = { version = "0.0.1", path = "../vt100" }
-terminal = { version = "0.0.1", path = "../terminal" }
-terminal_process = { version = "0.0.1", path = "../terminal_process" }
+vt100 = { version = "0.0.1", path = "../../src/vt100" }
+terminal = { version = "0.0.1", path = "../../src/terminal" }
+terminal_process = { version = "0.0.1", path = "../../src/terminal_process" }
 crossbeam-channel = { version = "0.5" }
 # graphics
 fontdue = { workspace = true }
-tile_renderer = { version = "0.0.1", path = "../tile_renderer" }
+tile_renderer = { version = "0.0.1", path = "../../src/tile_renderer" }
 wgpu = { workspace = true }
 winit = { version = "0.29.0" }
 # logging

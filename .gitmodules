@@ -1,4 +1,0 @@
-[submodule "vendor/conpty-rs"]
-	path = vendor/conpty-rs
-	url = https://github.com/zhiburt/conpty.git
-	branch = master

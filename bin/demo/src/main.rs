@@ -67,10 +67,7 @@ fn start_pty(args: &Args) -> anyhow::Result<()> {
 fn start_conpty(args: &Args) -> anyhow::Result<()> {
     let mut command = std::process::Command::new(&args.filename);
     command.args(args.arguments.as_slice());
-    command.stdin(std::process::Stdio::piped());
-    command.stdout(std::process::Stdio::piped());
-    command.stderr(std::process::Stdio::piped());
-    let process = conpty::Process::spawn(command)?;
+    let process = conpty::process::ConptyProcess::spawn(command, None)?;
     let process = ConptyProcess::new(process);
     start_terminal(args.clone(), Arc::new(Mutex::new(Box::new(process))))?;
     Ok(())

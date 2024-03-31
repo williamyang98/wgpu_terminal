@@ -2,13 +2,14 @@ use crate::process::TerminalProcess;
 use terminal::TerminalIOControl;
 use std::error::Error;
 use std::io::{Read, Write};
+use conpty::process::{ConptyProcess as Process, Size};
 
 pub struct ConptyProcess {
-    process: conpty::Process,
+    process: Process,
 }
 
 impl ConptyProcess {
-    pub fn new(process: conpty::Process) -> Self {
+    pub fn new(process: Process) -> Self {
         Self {
             process
         }
@@ -17,23 +18,23 @@ impl ConptyProcess {
 
 impl TerminalProcess for ConptyProcess {
     fn terminate(&mut self) -> Result<(), Box<dyn Error>> {
-        self.process.exit(0)?;
+        self.process.terminate(0)?;
         Ok(())
     }
 
     fn get_write_pipe(&mut self) -> Box<dyn Write + Send> {
-        let write_pipe = self.process.input().unwrap();
+        let write_pipe = self.process.get_write_pipe().try_clone().unwrap();
         Box::new(write_pipe)
     }
 
     fn get_read_pipe(&mut self) -> Box<dyn Read + Send> {
-        let read_pipe = self.process.output().unwrap();
+        let read_pipe = self.process.get_read_pipe().try_clone().unwrap();
         Box::new(read_pipe)
     }
 
     fn on_ioctl(&mut self, ev: TerminalIOControl) -> Result<(), Box<dyn Error>> {
         match ev {
-            TerminalIOControl::SetSize(size) => self.process.resize(size.x as i16, size.y as i16)?,
+            TerminalIOControl::SetSize(size) => self.process.set_size(Size::new(size.x as i16, size.y as i16))?,
         }
         Ok(())
     }
@@ -41,13 +42,5 @@ impl TerminalProcess for ConptyProcess {
     fn is_newline_carriage_return(&self) -> bool {
         // conpty converts \n to \r\n
         false
-    }
-}
-
-impl Drop for ConptyProcess {
-    fn drop(&mut self) {
-        if let Err(err) = self.terminate() {
-            log::error!("Failed to close conpty process: {:?}", err);
-        }
     }
 }

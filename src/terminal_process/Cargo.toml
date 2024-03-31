@@ -4,17 +4,13 @@ version = "0.0.1"
 edition = "2021"
 
 [dependencies]
+anyhow = { version = "1.0.80" }
 cgmath = { workspace = true, features = ["bytemuck"] }
 log = { workspace = true }
 terminal = { version = "0.0.1", path = "../terminal" }
 
-#[cfg(windows)]
-conpty = { workspace = true }
+[target.'cfg(windows)'.dependencies]
+conpty = { version = "0.0.1", path = "../conpty" }
 
-#[cfg(unix)]
-[dependencies.nix]
-version = "0.28.0"
-features = [
-    "term",
-    "process",
-]
+[target.'cfg(unix)'.dependencies]
+nix = { version = "0.28.0", features = ["term", "process"] }

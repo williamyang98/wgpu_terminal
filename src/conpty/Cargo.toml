@@ -1,0 +1,23 @@
+[package]
+name = "conpty"
+version = "0.0.1"
+edition = "2021"
+
+[dependencies]
+log = { version = "0.4.20" }
+thiserror = { version = "1.0.58" }
+
+[dev-dependencies]
+test-log = "0.2.15"
+
+[dependencies.windows]
+version = "0.53.0"
+features = [
+    "Win32_Foundation",
+    "Win32_System_Threading",
+    "Win32_System_Console",
+    "Win32_System_Pipes",
+    "Win32_System_WindowsProgramming",
+    "Win32_System_IO",
+    "Win32_Storage_FileSystem",
+]

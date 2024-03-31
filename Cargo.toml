@@ -7,6 +7,7 @@ members = [
     "src/circular_buffer_channel",
     "src/terminal",
     "src/terminal_process",
+    "src/conpty",
 ]
 
 [workspace.dependencies]

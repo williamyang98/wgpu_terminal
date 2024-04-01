@@ -19,9 +19,9 @@ pub struct AppBuilder {
     pub process: Arc<Mutex<Box<dyn TerminalProcess + Send>>>,
 }
 
-fn create_default_terminal_builder(process: Arc<Mutex<Box<dyn TerminalProcess + Send>>>) -> TerminalBuilder {
+fn create_default_terminal_builder(process: Arc<Mutex<Box<dyn TerminalProcess + Send>>>) -> anyhow::Result<TerminalBuilder> {
     let process_read = {
-        let mut read_pipe = process.lock().unwrap().get_read_pipe();
+        let mut read_pipe = process.lock().unwrap().get_read_pipe()?;
         move |data: &mut [u8]| {
             match read_pipe.read(data) {
                 Ok(total) => total,
@@ -33,7 +33,7 @@ fn create_default_terminal_builder(process: Arc<Mutex<Box<dyn TerminalProcess + 
         }
     };
     let process_write = {
-        let mut write_pipe = process.lock().unwrap().get_write_pipe();
+        let mut write_pipe = process.lock().unwrap().get_write_pipe()?;
         move |data: &[u8]| {
             if let Err(err) = write_pipe.write_all(data) {
                 log::info!("Terminal process write pipe failed: {:?}", err);
@@ -48,17 +48,17 @@ fn create_default_terminal_builder(process: Arc<Mutex<Box<dyn TerminalProcess + 
         }
     };
     let window_action = |_action: WindowAction| {};
-    TerminalBuilder {
+    Ok(TerminalBuilder {
         process_read: Box::new(process_read),
         process_write: Box::new(process_write),
         process_ioctl: Box::new(process_ioctl),
         window_action: Box::new(window_action),
-    }
+    })
 }
 
 pub fn start_app(builder: AppBuilder) -> anyhow::Result<()> {
     let process = builder.process;
-    let mut terminal_builder = create_default_terminal_builder(process.clone());
+    let mut terminal_builder = create_default_terminal_builder(process.clone())?;
     let event_loop = winit::event_loop::EventLoopBuilder::<AppEvent>::with_user_event().build()?;
     use std::sync::atomic::{AtomicBool, Ordering};
     let is_refresh_trigger = Arc::new(AtomicBool::new(false));
@@ -111,7 +111,7 @@ pub fn start_app(builder: AppBuilder) -> anyhow::Result<()> {
 
 pub fn start_headless(builder: AppBuilder) -> anyhow::Result<()> {
     let process = builder.process;
-    let terminal_builder = create_default_terminal_builder(process.clone());
+    let terminal_builder = create_default_terminal_builder(process.clone())?;
     let mut terminal = Terminal::new(terminal_builder);
     {
         let user_events = terminal.get_user_event_handler();

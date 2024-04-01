@@ -61,11 +61,14 @@ pub struct TerminalBuilder {
     pub process_write: Box<dyn FnMut(&[u8]) + Send>,
     pub process_ioctl: Box<dyn FnMut(TerminalIOControl) + Send>,
     pub window_action: Box<dyn FnMut(WindowAction) + Send>,
+    pub is_newline_carriage_return: bool,
 }
 
 impl Terminal {
     pub fn new(mut builder: TerminalBuilder) -> Self {
-        let display = Arc::new(Mutex::new(TerminalDisplay::default()));
+        let mut display = TerminalDisplay::default();
+        display.is_newline_carriage_return = builder.is_newline_carriage_return;
+        let display = Arc::new(Mutex::new(display));
         let encoder = Arc::new(Mutex::new(Vt100Encoder::default()));
         // parser thread 
         let mut parser_handler = ParserHandler {

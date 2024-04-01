@@ -48,11 +48,13 @@ fn create_default_terminal_builder(process: Arc<Mutex<Box<dyn TerminalProcess + 
         }
     };
     let window_action = |_action: WindowAction| {};
+    let is_newline_carriage_return = process.lock().unwrap().is_newline_carriage_return();
     Ok(TerminalBuilder {
         process_read: Box::new(process_read),
         process_write: Box::new(process_write),
         process_ioctl: Box::new(process_ioctl),
         window_action: Box::new(window_action),
+        is_newline_carriage_return,
     })
 }
 
@@ -74,13 +76,6 @@ pub fn start_app(builder: AppBuilder) -> anyhow::Result<()> {
     };
     terminal_builder.window_action = Box::new(window_action);
     let terminal = Terminal::new(terminal_builder);
-    {
-        let user_events = terminal.get_user_event_handler();
-        let is_carriage_return = process.lock().unwrap().is_newline_carriage_return();
-        let event = TerminalUserEvent::SetIsNewlineCarriageReturn(is_carriage_return);
-        user_events.send(event).unwrap();
-    }
-
     let window = winit::window::WindowBuilder::new().build(&event_loop)?;
     let mut window_size = window.inner_size();
     window_size.width = window_size.width.max(1);
@@ -113,12 +108,6 @@ pub fn start_headless(builder: AppBuilder) -> anyhow::Result<()> {
     let process = builder.process;
     let terminal_builder = create_default_terminal_builder(process.clone())?;
     let mut terminal = Terminal::new(terminal_builder);
-    {
-        let user_events = terminal.get_user_event_handler();
-        let is_carriage_return = process.lock().unwrap().is_newline_carriage_return();
-        user_events.send(TerminalUserEvent::SetIsNewlineCarriageReturn(is_carriage_return)).unwrap();
-        user_events.send(TerminalUserEvent::GridResize(Vector2::new(100,32))).unwrap();
-    }
     terminal.join_parser_thread();
     match process.lock().unwrap().terminate() {
         Ok(()) => log::info!("Process terminated successfully"),

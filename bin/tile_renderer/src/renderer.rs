@@ -40,7 +40,7 @@ impl Default for GlobalParameters {
 type Vertex = Vector2<f32>;
 
 pub struct Renderer {
-    shader_module: wgpu::ShaderModule,
+    _shader_module: wgpu::ShaderModule,
     global_parameters: GlobalParameters,
     global_parameters_uniform: wgpu::Buffer,
     atlas_sampler: wgpu::Sampler,
@@ -49,7 +49,7 @@ pub struct Renderer {
     mesh: Mesh,
     bind_group_layout: wgpu::BindGroupLayout,
     render_pipeline: wgpu::RenderPipeline,
-    surface_texture_format: wgpu::TextureFormat,
+    _surface_texture_format: wgpu::TextureFormat,
     clear_colour: wgpu::Color,
 }
 
@@ -182,7 +182,7 @@ impl Renderer {
         });
 
         Self {
-            shader_module,
+            _shader_module: shader_module,
             global_parameters,
             global_parameters_uniform,
             atlas_sampler,
@@ -191,7 +191,7 @@ impl Renderer {
             mesh,
             bind_group_layout,
             render_pipeline,
-            surface_texture_format,
+            _surface_texture_format: surface_texture_format,
             clear_colour,
         }
     }

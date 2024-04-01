@@ -319,10 +319,10 @@ impl Encoder {
                         MouseButton::RightClick  => 1,
                         MouseButton::MiddleClick => 2,
                         // https://invisible-island.net/xterm/ctlseqs/ctlseqs.html#h3-Wheel-mice
-                        MouseButton::WheelUp     => 0+64,
-                        MouseButton::WheelDown   => 1+64,
-                        MouseButton::WheelLeft   => 2+64,
-                        MouseButton::WheelRight  => 3+64,
+                        MouseButton::WheelUp     => 64,
+                        MouseButton::WheelDown   => 64+1,
+                        MouseButton::WheelLeft   => 64+2,
+                        MouseButton::WheelRight  => 64+3,
                     };
                     self.encode_buffer.extend_from_slice(b"\x1b[M");
                     self.encode_buffer.push(event_code);

@@ -2,14 +2,12 @@ use terminal::{
     Terminal, 
     TerminalBuilder,
     TerminalIOControl,
-    TerminalUserEvent,
 };
 use terminal::terminal_renderer::TerminalRenderer;
 use terminal_process::TerminalProcess;
 use vt100::common::WindowAction;
 use crate::app_events::AppEvent;
 use crate::app_window::AppWindow;
-use cgmath::Vector2;
 use std::io::{Read, Write};
 use std::sync::{Arc, Mutex};
 

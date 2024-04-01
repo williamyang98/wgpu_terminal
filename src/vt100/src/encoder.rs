@@ -432,7 +432,7 @@ impl Encoder {
                 self.encode_buffer.push((grid_pos.y+32).min(255) as u8);
             },
             MouseCoordinateFormat::Utf8 => {
-                
+                // @TODO: figure out how utf8 encoding works for coordinate system
             },
             MouseCoordinateFormat::Sgr | MouseCoordinateFormat::Urxvt => {
                 let _ = write!(&mut self.encode_buffer, "{};{}", grid_pos.x, grid_pos.y);

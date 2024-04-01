@@ -1,12 +1,10 @@
 use crate::{
     primitives::{Cell,StyleFlags, Pen},
-    colour_table::{XTERM_COLOUR_TABLE, convert_u32_to_rgb},
     scrollback_buffer::ScrollbackBuffer,
 };
 use vt100::{
     common::{
         CursorStyle,
-        GraphicStyle,
         Rgb8,
     },
 };
@@ -44,7 +42,6 @@ pub struct TerminalDisplay {
     row_status: Vec<LineStatus>,
     scrollback_buffer: ScrollbackBuffer, // eject lines into scrollback buffer
     saved_cursor: Option<Vector2<usize>>,
-    colour_table: Vec<Rgb8>,
     resize_cells: Vec<Cell>, // temporary resize buffers
     resize_row_status: Vec<LineStatus>,
     pub(crate) cursor_status: CursorStatus,
@@ -58,18 +55,6 @@ pub const DEFAULT_VIEWPORT_SIZE: Vector2<usize> = Vector2::new(128,128);
 impl Default for TerminalDisplay {
     fn default() -> Self {
         let total_cells = DEFAULT_VIEWPORT_SIZE.x * DEFAULT_VIEWPORT_SIZE.y;
-        let colour_table: Vec<Rgb8> = XTERM_COLOUR_TABLE
-            .iter()
-            .map(|v| {
-                const A: u8 = 80;
-                let mut rgb = convert_u32_to_rgb(*v);
-                rgb.r = rgb.r.saturating_add(A);
-                rgb.g = rgb.g.saturating_add(A);
-                rgb.b = rgb.b.saturating_add(A);
-                rgb
-            })
-            .collect();
-        assert!(colour_table.len() == 256);
         let default_pen = Pen {
             foreground_colour: Rgb8 { r: 255, b: 255, g: 255 },
             background_colour: Rgb8 { r: 5, b: 10, g: 7 },
@@ -89,7 +74,6 @@ impl Default for TerminalDisplay {
             saved_cursor: None,
             pen: default_pen,
             default_pen,
-            colour_table,
             is_newline_carriage_return: false,
         }
     }
@@ -100,79 +84,12 @@ impl TerminalDisplay {
         &self.scrollback_buffer
     }
  
-    pub(crate) fn set_graphic_style(&mut self, style: GraphicStyle) {
-        match style {
-            GraphicStyle::ResetAll => { self.pen = self.default_pen; },
-            // flags
-            GraphicStyle::EnableBold => { self.pen.style_flags |= StyleFlags::Bold; },
-            GraphicStyle::EnableDim => { self.pen.style_flags |= StyleFlags::Dim; },
-            GraphicStyle::EnableItalic => { self.pen.style_flags |= StyleFlags::Italic; },
-            GraphicStyle::EnableUnderline => { self.pen.style_flags |= StyleFlags::Underline; },
-            GraphicStyle::EnableBlinking => { self.pen.style_flags |= StyleFlags::Blinking; },
-            GraphicStyle::EnableInverse => { self.pen.style_flags |= StyleFlags::Inverse; },
-            GraphicStyle::EnableHidden => { self.pen.style_flags |= StyleFlags::Hidden; },
-            GraphicStyle::EnableStrikethrough => { self.pen.style_flags |= StyleFlags::Strikethrough; },
-            GraphicStyle::DisableWeight => { self.pen.style_flags &= !(StyleFlags::Bold | StyleFlags::Dim); },
-            GraphicStyle::DisableItalic => { self.pen.style_flags &= !StyleFlags::Italic; },
-            GraphicStyle::DisableUnderline => { self.pen.style_flags &= !StyleFlags::Underline; },
-            GraphicStyle::DisableBlinking => { self.pen.style_flags &= !StyleFlags::Blinking; },
-            GraphicStyle::DisableInverse => { self.pen.style_flags &= !StyleFlags::Inverse; },
-            GraphicStyle::DisableHidden => { self.pen.style_flags &= !StyleFlags::Hidden; },
-            GraphicStyle::DisableStrikethrough => { self.pen.style_flags &= !StyleFlags::Strikethrough; },
-            // foreground colours
-            GraphicStyle::ForegroundBlack => { self.pen.foreground_colour = self.colour_table[0]; },
-            GraphicStyle::ForegroundRed => { self.pen.foreground_colour = self.colour_table[1]; },
-            GraphicStyle::ForegroundGreen => { self.pen.foreground_colour = self.colour_table[2]; },
-            GraphicStyle::ForegroundYellow => { self.pen.foreground_colour = self.colour_table[3]; },
-            GraphicStyle::ForegroundBlue => { self.pen.foreground_colour = self.colour_table[4]; },
-            GraphicStyle::ForegroundMagenta => { self.pen.foreground_colour = self.colour_table[5]; },
-            GraphicStyle::ForegroundCyan => { self.pen.foreground_colour = self.colour_table[6]; },
-            GraphicStyle::ForegroundWhite => { self.pen.foreground_colour = self.colour_table[7]; },
-            GraphicStyle::ForegroundExtended => { log::info!("[vt100] GraphicStyle({:?})", style); },
-            GraphicStyle::ForegroundDefault => { self.pen.foreground_colour = self.default_pen.foreground_colour; },
-            // background colours
-            GraphicStyle::BackgroundBlack => { self.pen.background_colour = self.colour_table[0]; },
-            GraphicStyle::BackgroundRed => { self.pen.background_colour = self.colour_table[1]; },
-            GraphicStyle::BackgroundGreen => { self.pen.background_colour = self.colour_table[2]; },
-            GraphicStyle::BackgroundYellow => { self.pen.background_colour = self.colour_table[3]; },
-            GraphicStyle::BackgroundBlue => { self.pen.background_colour = self.colour_table[4]; },
-            GraphicStyle::BackgroundMagenta => { self.pen.background_colour = self.colour_table[5]; },
-            GraphicStyle::BackgroundCyan => { self.pen.background_colour = self.colour_table[6]; },
-            GraphicStyle::BackgroundWhite => { self.pen.background_colour = self.colour_table[7]; },
-            GraphicStyle::BackgroundExtended => { log::info!("[vt100] GraphicStyle({:?})", style); },
-            GraphicStyle::BackgroundDefault => { self.pen.background_colour = self.default_pen.background_colour; },
-            // bright foreground colours
-            GraphicStyle::BrightForegroundBlack => { self.pen.foreground_colour = self.colour_table[0]; },
-            GraphicStyle::BrightForegroundRed => { self.pen.foreground_colour = self.colour_table[1]; },
-            GraphicStyle::BrightForegroundGreen => { self.pen.foreground_colour = self.colour_table[2]; },
-            GraphicStyle::BrightForegroundYellow => { self.pen.foreground_colour = self.colour_table[3]; },
-            GraphicStyle::BrightForegroundBlue => { self.pen.foreground_colour = self.colour_table[4]; },
-            GraphicStyle::BrightForegroundMagenta => { self.pen.foreground_colour = self.colour_table[5]; },
-            GraphicStyle::BrightForegroundCyan => { self.pen.foreground_colour = self.colour_table[6]; },
-            GraphicStyle::BrightForegroundWhite => { self.pen.foreground_colour = self.colour_table[7]; },
-            // bright background colours
-            GraphicStyle::BrightBackgroundBlack => { self.pen.background_colour = self.colour_table[0]; },
-            GraphicStyle::BrightBackgroundRed => { self.pen.background_colour = self.colour_table[1]; },
-            GraphicStyle::BrightBackgroundGreen => { self.pen.background_colour = self.colour_table[2]; },
-            GraphicStyle::BrightBackgroundYellow => { self.pen.background_colour = self.colour_table[3]; },
-            GraphicStyle::BrightBackgroundBlue => { self.pen.background_colour = self.colour_table[4]; },
-            GraphicStyle::BrightBackgroundMagenta => { self.pen.background_colour = self.colour_table[5]; },
-            GraphicStyle::BrightBackgroundCyan => { self.pen.background_colour = self.colour_table[6]; },
-            GraphicStyle::BrightBackgroundWhite => { self.pen.background_colour = self.colour_table[7]; },
-        }
-    }
-
     #[inline]
     pub(crate) fn write_utf8(&mut self, character: char) {
         let cell = Cell { character, pen: self.pen };
         self.write_cell(&cell);
     }
 
-    #[inline]
-    pub(crate) fn get_colour_from_table(&self, index: u8) -> Rgb8 {
-        self.colour_table[index as usize]
-    }
- 
     #[inline]
     pub(crate) fn write_ascii(&mut self, b: u8) {
         match b {

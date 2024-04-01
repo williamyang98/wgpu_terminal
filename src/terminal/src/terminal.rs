@@ -17,9 +17,12 @@ use vt100::{
         EraseMode,
         Rgb8,
         WindowAction,
+        GraphicStyle,
     },
 };
 use crate::{
+    primitives::StyleFlags,
+    colour_table::{XTERM_COLOUR_TABLE, convert_u32_to_rgb},
     terminal_parser::{TerminalParser, TerminalParserHandler},
     terminal_display::TerminalDisplay,
     utf8_parser::ParserError as Utf8ParserError,
@@ -70,11 +73,25 @@ impl Terminal {
         display.is_newline_carriage_return = builder.is_newline_carriage_return;
         let display = Arc::new(Mutex::new(display));
         let encoder = Arc::new(Mutex::new(Vt100Encoder::default()));
+        // default colour table
+        let colour_table: Vec<Rgb8> = XTERM_COLOUR_TABLE
+            .iter()
+            .map(|v| {
+                const A: u8 = 80;
+                let mut rgb = convert_u32_to_rgb(*v);
+                rgb.r = rgb.r.saturating_add(A);
+                rgb.g = rgb.g.saturating_add(A);
+                rgb.b = rgb.b.saturating_add(A);
+                rgb
+            })
+            .collect();
+        assert!(colour_table.len() == 256);
         // parser thread 
         let mut parser_handler = ParserHandler {
             display: display.clone(),
             encoder: encoder.clone(),
             window_action: builder.window_action,
+            colour_table,
         };
         let parser_thread = std::thread::spawn(move || {
             let mut buffer = vec![0u8; 8192];
@@ -132,6 +149,73 @@ struct ParserHandler {
     display: Arc<Mutex<TerminalDisplay>>,
     encoder: Arc<Mutex<Vt100Encoder>>,
     window_action: Box<dyn FnMut(WindowAction) + Send>,
+    colour_table: Vec<Rgb8>,
+}
+
+impl ParserHandler {
+    fn set_graphic_style(&mut self, style: GraphicStyle) {
+        let mut display = self.display.lock().unwrap();
+        match style {
+            GraphicStyle::ResetAll => { display.pen = display.default_pen; },
+            // flags
+            GraphicStyle::EnableBold => { display.pen.style_flags |= StyleFlags::Bold; },
+            GraphicStyle::EnableDim => { display.pen.style_flags |= StyleFlags::Dim; },
+            GraphicStyle::EnableItalic => { display.pen.style_flags |= StyleFlags::Italic; },
+            GraphicStyle::EnableUnderline => { display.pen.style_flags |= StyleFlags::Underline; },
+            GraphicStyle::EnableBlinking => { display.pen.style_flags |= StyleFlags::Blinking; },
+            GraphicStyle::EnableInverse => { display.pen.style_flags |= StyleFlags::Inverse; },
+            GraphicStyle::EnableHidden => { display.pen.style_flags |= StyleFlags::Hidden; },
+            GraphicStyle::EnableStrikethrough => { display.pen.style_flags |= StyleFlags::Strikethrough; },
+            GraphicStyle::DisableWeight => { display.pen.style_flags &= !(StyleFlags::Bold | StyleFlags::Dim); },
+            GraphicStyle::DisableItalic => { display.pen.style_flags &= !StyleFlags::Italic; },
+            GraphicStyle::DisableUnderline => { display.pen.style_flags &= !StyleFlags::Underline; },
+            GraphicStyle::DisableBlinking => { display.pen.style_flags &= !StyleFlags::Blinking; },
+            GraphicStyle::DisableInverse => { display.pen.style_flags &= !StyleFlags::Inverse; },
+            GraphicStyle::DisableHidden => { display.pen.style_flags &= !StyleFlags::Hidden; },
+            GraphicStyle::DisableStrikethrough => { display.pen.style_flags &= !StyleFlags::Strikethrough; },
+            // foreground colours
+            GraphicStyle::ForegroundBlack => { display.pen.foreground_colour = self.colour_table[0]; },
+            GraphicStyle::ForegroundRed => { display.pen.foreground_colour = self.colour_table[1]; },
+            GraphicStyle::ForegroundGreen => { display.pen.foreground_colour = self.colour_table[2]; },
+            GraphicStyle::ForegroundYellow => { display.pen.foreground_colour = self.colour_table[3]; },
+            GraphicStyle::ForegroundBlue => { display.pen.foreground_colour = self.colour_table[4]; },
+            GraphicStyle::ForegroundMagenta => { display.pen.foreground_colour = self.colour_table[5]; },
+            GraphicStyle::ForegroundCyan => { display.pen.foreground_colour = self.colour_table[6]; },
+            GraphicStyle::ForegroundWhite => { display.pen.foreground_colour = self.colour_table[7]; },
+            GraphicStyle::ForegroundExtended => { log::info!("[vt100] GraphicStyle({:?})", style); },
+            GraphicStyle::ForegroundDefault => { display.pen.foreground_colour = display.default_pen.foreground_colour; },
+            // background colours
+            GraphicStyle::BackgroundBlack => { display.pen.background_colour = self.colour_table[0]; },
+            GraphicStyle::BackgroundRed => { display.pen.background_colour = self.colour_table[1]; },
+            GraphicStyle::BackgroundGreen => { display.pen.background_colour = self.colour_table[2]; },
+            GraphicStyle::BackgroundYellow => { display.pen.background_colour = self.colour_table[3]; },
+            GraphicStyle::BackgroundBlue => { display.pen.background_colour = self.colour_table[4]; },
+            GraphicStyle::BackgroundMagenta => { display.pen.background_colour = self.colour_table[5]; },
+            GraphicStyle::BackgroundCyan => { display.pen.background_colour = self.colour_table[6]; },
+            GraphicStyle::BackgroundWhite => { display.pen.background_colour = self.colour_table[7]; },
+            GraphicStyle::BackgroundExtended => { log::info!("[vt100] GraphicStyle({:?})", style); },
+            GraphicStyle::BackgroundDefault => { display.pen.background_colour = display.default_pen.background_colour; },
+            // bright foreground colours
+            GraphicStyle::BrightForegroundBlack => { display.pen.foreground_colour = self.colour_table[0]; },
+            GraphicStyle::BrightForegroundRed => { display.pen.foreground_colour = self.colour_table[1]; },
+            GraphicStyle::BrightForegroundGreen => { display.pen.foreground_colour = self.colour_table[2]; },
+            GraphicStyle::BrightForegroundYellow => { display.pen.foreground_colour = self.colour_table[3]; },
+            GraphicStyle::BrightForegroundBlue => { display.pen.foreground_colour = self.colour_table[4]; },
+            GraphicStyle::BrightForegroundMagenta => { display.pen.foreground_colour = self.colour_table[5]; },
+            GraphicStyle::BrightForegroundCyan => { display.pen.foreground_colour = self.colour_table[6]; },
+            GraphicStyle::BrightForegroundWhite => { display.pen.foreground_colour = self.colour_table[7]; },
+            // bright background colours
+            GraphicStyle::BrightBackgroundBlack => { display.pen.background_colour = self.colour_table[0]; },
+            GraphicStyle::BrightBackgroundRed => { display.pen.background_colour = self.colour_table[1]; },
+            GraphicStyle::BrightBackgroundGreen => { display.pen.background_colour = self.colour_table[2]; },
+            GraphicStyle::BrightBackgroundYellow => { display.pen.background_colour = self.colour_table[3]; },
+            GraphicStyle::BrightBackgroundBlue => { display.pen.background_colour = self.colour_table[4]; },
+            GraphicStyle::BrightBackgroundMagenta => { display.pen.background_colour = self.colour_table[5]; },
+            GraphicStyle::BrightBackgroundCyan => { display.pen.background_colour = self.colour_table[6]; },
+            GraphicStyle::BrightBackgroundWhite => { display.pen.background_colour = self.colour_table[7]; },
+        }
+    }
+
 }
 
 impl TerminalParserHandler for ParserHandler {
@@ -169,8 +253,7 @@ impl TerminalParserHandler for ParserHandler {
             },
             // display
             Vt100Command::SetGraphicStyle(style) => {
-                let mut display = self.display.lock().unwrap();
-                display.set_graphic_style(style);
+                self.set_graphic_style(style);
             },
             Vt100Command::SetBackgroundColourRgb(rgb) => {
                 let mut display = self.display.lock().unwrap();
@@ -196,12 +279,12 @@ impl TerminalParserHandler for ParserHandler {
             },
             Vt100Command::SetBackgroundColourTable(index) => {
                 let mut display = self.display.lock().unwrap();
-                let colour = display.get_colour_from_table(index);
+                let colour = self.colour_table[index as usize];
                 display.pen.background_colour = colour;
             },
             Vt100Command::SetForegroundColourTable(index) => {
                 let mut display = self.display.lock().unwrap();
-                let colour = display.get_colour_from_table(index);
+                let colour = self.colour_table[index as usize];
                 display.pen.foreground_colour = colour;
             },
             // erase data

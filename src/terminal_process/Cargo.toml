@@ -13,4 +13,4 @@ terminal = { version = "0.0.1", path = "../terminal" }
 conpty = { version = "0.0.1", path = "../conpty" }
 
 [target.'cfg(unix)'.dependencies]
-nix = { version = "0.28.0", features = ["term", "process"] }
+unix_pty = { version = "0.0.1", path = "../unix_pty/" }

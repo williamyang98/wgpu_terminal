@@ -1,0 +1,23 @@
+[package]
+name = "unix_pty"
+version = "0.0.1"
+edition = "2021"
+
+[dependencies]
+log = { version = "0.4.20" }
+thiserror = { version = "1.0.58" }
+cgmath = { git = "https://github.com/rustgd/cgmath.git", version = "0.18.0", features = ["bytemuck"] }
+libc = { version = "0.2.153", features = ["extra_traits"] }
+
+[dev-dependencies]
+test-log = "0.2.15"
+
+[dependencies.nix]
+version = "0.28.0"
+features = [
+    "term",
+    "process",
+    "fs",
+    "ioctl",
+    "signal",
+]

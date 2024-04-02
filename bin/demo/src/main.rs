@@ -3,22 +3,26 @@ use terminal_process::*;
 use wgpu_terminal::app::{AppBuilder, start_app, start_headless};
 use std::sync::{Arc, Mutex};
 
-#[derive(Clone,Copy,Debug,Default,clap::ValueEnum)]
+#[derive(Clone,Copy,Debug,clap::ValueEnum)]
 enum Mode {
-    #[cfg(unix)]
-    #[default]
-    Pty,
-    #[cfg(windows)]
-    #[default]
-    Conpty,
     Raw,
+    #[cfg(windows)]
+    Conpty,
+    #[cfg(unix)]
+    Pty,
 }
 
 #[derive(Clone,Debug,Parser)]
 #[command(author, version, about, long_about = None)]
 struct Args {
     /// Filepath of shell executable
+    #[cfg(windows)]
     #[arg(default_value = "cmd.exe")]
+    filename: String,
+    #[cfg(unix)]
+    #[arg(default_value = "/usr/bin/bash")]
+    filename: String,
+    #[cfg(not(any(windows, unix)))]
     filename: String,
     /// Filepath arguments
     arguments: Vec<String>,
@@ -29,7 +33,14 @@ struct Args {
     #[arg(long, default_value = "./res/Iosevka-custom-regular.ttf")]
     font_filename: String,
     /// Mode
-    #[arg(value_enum, long, default_value_t = Mode::default())]
+    #[cfg(windows)]
+    #[arg(value_enum, long, default_value_t = Mode::Conpty)]
+    mode: Mode,
+    #[cfg(unix)]
+    #[arg(value_enum, long, default_value_t = Mode::Pty)]
+    mode: Mode,
+    #[cfg(not(any(windows, unix)))]
+    #[arg(value_enum, long, default_value_t = Mode::Raw)]
     mode: Mode,
     /// Headless
     #[arg(long, default_value_t = false)]
@@ -52,14 +63,19 @@ fn main() -> anyhow::Result<()> {
     match args.mode { 
         Mode::Raw => start_raw_shell(&args),
         #[cfg(unix)]
-        Mode::Pty => start_pty(&args),
+        Mode::Pty => start_unix_pty(&args),
         #[cfg(windows)]
         Mode::Conpty => start_conpty(&args),
     }
 }
 
 #[cfg(unix)]
-fn start_pty(args: &Args) -> anyhow::Result<()> {
+fn start_unix_pty(args: &Args) -> anyhow::Result<()> {
+    let mut command = std::process::Command::new(&args.filename);
+    command.args(args.arguments.as_slice());
+    let process = unix_pty::process::PtyProcess::spawn(command, None)?;
+    let process = UnixPtyProcess::new(process);
+    start_terminal(args.clone(), Arc::new(Mutex::new(Box::new(process))))?;
     Ok(())
 }
 

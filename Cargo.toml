@@ -8,6 +8,7 @@ members = [
     "src/terminal",
     "src/terminal_process",
     "src/conpty",
+    "src/unix_pty",
 ]
 
 [workspace.dependencies]

@@ -28,4 +28,4 @@ anyhow = { version = "1.0.80" }
 conpty = { version = "0.0.1", path = "../../src/conpty" }
 
 [target.'cfg(unix)'.dependencies]
-nix = { version = "0.28.0", features = ["term", "process"] }
+unix_pty = { version = "0.0.1", path = "../../src/unix_pty" }

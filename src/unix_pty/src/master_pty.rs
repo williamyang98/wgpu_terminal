@@ -101,15 +101,15 @@ impl MasterPty {
  
 
     pub fn set_utf8(&self, is_utf8: bool) -> Result<(), Errno> {
-        let mut termios = tcgetattr(&self)?;
+        let mut termios = tcgetattr(self)?;
         termios.input_flags.set(InputFlags::IUTF8, is_utf8);
-        let _ = tcsetattr(&self, SetArg::TCSANOW, &termios)?;
+        tcsetattr(self, SetArg::TCSANOW, &termios)?;
         Ok(())
     }
 
     pub fn set_blocking(&self, is_blocking: bool) -> Result<(), Errno> {
         let flag = fcntl(self.as_raw_fd(), FcntlArg::F_GETFL)?;
-        let mut flag = OFlag::from_bits(flag).ok_or_else(|| Errno::EINVAL)?;
+        let mut flag = OFlag::from_bits(flag).ok_or(Errno::EINVAL)?;
         flag.set(OFlag::O_NONBLOCK, !is_blocking);
         let _ = fcntl(self.as_raw_fd(), FcntlArg::F_SETFL(flag))?;
         Ok(())

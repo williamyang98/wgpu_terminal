@@ -255,7 +255,7 @@ impl Parser {
                 Ok(6) => self.on_success(h, Command::QueryCursorPosition),
                 _ => self.on_error(h, ParserError::Unhandled),
             },
-            b'c' => match self.numbers.get(0).copied().unwrap_or(0) {
+            b'c' => match self.numbers.first().copied().unwrap_or(0) {
                 0 => self.on_success(h, Command::QueryTerminalIdentity),
                 id => self.on_success(h, Command::UnhandledDeviceQuery(id)),
             },

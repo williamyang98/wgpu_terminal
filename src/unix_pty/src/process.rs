@@ -37,27 +37,27 @@ pub struct PtyProcess {
 #[derive(Debug,Error)]
 pub enum SpawnError {
     #[error("failed to openpty pipes: {0:?}")]
-    FailedOpenPty(Errno),
+    OpenPty(Errno),
     #[error("failed to set utf8 to pty: {0:?}")]
-    FailedSetUtf8MasterPty(Errno),
+    SetUtf8MasterPty(Errno),
     #[error("failed to grant access to slave pty: {0:?}")]
-    FailedGrantAccessMasterPty(Errno),
+    GrantAccessMasterPty(Errno),
     #[error("failed to unlock slave pty: {0:?}")]
-    FailedUnlockMasterPty(Errno),
+    UnlockMasterPty(Errno),
     #[error("failed to clone slave fd: {0:?}")]
-    FailedCloneSlaveFd(std::io::Error),
+    CloneSlaveFd(std::io::Error),
     #[error("failed to spawn process: {0:?}")]
-    FailedSpawnProcess(std::io::Error),
+    SpawnProcess(std::io::Error),
 }
 
 #[derive(Debug,Error)]
 enum ExecError {
     #[error("failed to create new session and set process group id: {0:?}")]
-    FailedNewSession(Errno),
+    NewSession(Errno),
     #[error("failed to set as controlling terminal of process: {0:?}")]
-    FailedSetControllingTerminal(Errno),
+    SetControllingTerminal(Errno),
     #[error("failed to set signal handler")]
-    FailedSetSignalHandler(Signal, SigHandler, Errno),
+    SetSignalHandler(Signal, SigHandler, Errno),
 }
 
 impl From<ExecError> for std::io::Error {
@@ -75,31 +75,31 @@ impl PtyProcess {
             ws_xpixel: 0,
             ws_ypixel: 0,
         };
-        let res = openpty(Some(&window_size), None).map_err(SpawnError::FailedOpenPty)?;
+        let res = openpty(Some(&window_size), None).map_err(SpawnError::OpenPty)?;
         let master_pty = MasterPty::from(res.master);
         let slave_fd = res.slave;
 
-        master_pty.set_utf8(true).map_err(SpawnError::FailedSetUtf8MasterPty)?;
-        master_pty.grantpt().map_err(SpawnError::FailedGrantAccessMasterPty)?;
-        master_pty.unlockpt().map_err(SpawnError::FailedUnlockMasterPty)?;
+        master_pty.set_utf8(true).map_err(SpawnError::SetUtf8MasterPty)?;
+        master_pty.grantpt().map_err(SpawnError::GrantAccessMasterPty)?;
+        master_pty.unlockpt().map_err(SpawnError::UnlockMasterPty)?;
  
-        command.stdin(Stdio::from(slave_fd.try_clone().map_err(SpawnError::FailedCloneSlaveFd)?));
-        command.stdout(Stdio::from(slave_fd.try_clone().map_err(SpawnError::FailedCloneSlaveFd)?));
-        command.stderr(Stdio::from(slave_fd.try_clone().map_err(SpawnError::FailedCloneSlaveFd)?));
+        command.stdin(Stdio::from(slave_fd.try_clone().map_err(SpawnError::CloneSlaveFd)?));
+        command.stdout(Stdio::from(slave_fd.try_clone().map_err(SpawnError::CloneSlaveFd)?));
+        command.stderr(Stdio::from(slave_fd.try_clone().map_err(SpawnError::CloneSlaveFd)?));
         unsafe {
             command.pre_exec(move || -> Result<(), std::io::Error> {
-                let _ = setsid().map_err(ExecError::FailedNewSession)?;
+                let _ = setsid().map_err(ExecError::NewSession)?;
                 // https://man7.org/linux/man-pages/man2/ioctl_tty.2.html
                 let res = libc::ioctl(slave_fd.as_raw_fd(), libc::TIOCSCTTY as _, 0);
                 if res != 0 {
                     if res != -1 {
                         log::warn!("Got unexpected failure code: {}", res);
                     }
-                    return Err(ExecError::FailedSetControllingTerminal(Errno::last()).into()); 
+                    return Err(ExecError::SetControllingTerminal(Errno::last()).into()); 
                 }
                 // setup signal handlers
                 let set_signal = |sig: Signal, handler: SigHandler| {
-                    signal(sig, handler).map_err(|e| ExecError::FailedSetSignalHandler(sig, handler, e))
+                    signal(sig, handler).map_err(|e| ExecError::SetSignalHandler(sig, handler, e))
                 };
                 set_signal(Signal::SIGCHLD, SigHandler::SigDfl)?;
                 set_signal(Signal::SIGHUP, SigHandler::SigDfl)?;
@@ -111,7 +111,7 @@ impl PtyProcess {
             });
         }
 
-        let child = command.spawn().map_err(SpawnError::FailedSpawnProcess)?;
+        let child = command.spawn().map_err(SpawnError::SpawnProcess)?;
 
         Ok(Self {
             master_pty,

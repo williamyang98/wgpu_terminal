@@ -1,3 +1,4 @@
+#![allow(clippy::type_complexity)]
 use std::thread::JoinHandle;
 use std::sync::{Arc, Mutex, MutexGuard};
 use vt100::{

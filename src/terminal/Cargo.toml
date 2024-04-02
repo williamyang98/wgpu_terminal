@@ -4,10 +4,9 @@ version = "0.0.1"
 edition = "2021"
 
 [dependencies]
-bytemuck = { workspace = true, features = ["derive" ] }
 cgmath = { workspace = true, features = ["bytemuck"] }
 vt100 = { version = "0.0.1", path = "../vt100" }
-log = { workspace = true }
+log = { version = "0.4.20" }
 bitflags = { version = "2.4.2" }
 circular_buffer = { version = "0.0.1", path = "../circular_buffer" }
 crossbeam-channel = { version = "0.5" }

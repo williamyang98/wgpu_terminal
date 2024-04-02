@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-bytemuck = { workspace = true, features = ["derive" ] }
+bytemuck = { version = "1.14.3", features = ["derive" ] }
 cgmath = { workspace = true, features = ["bytemuck"] }
 # terminal
 vt100 = { version = "0.0.1", path = "../../src/vt100" }
@@ -17,7 +17,7 @@ tile_renderer = { version = "0.0.1", path = "../tile_renderer" }
 wgpu = { workspace = true }
 winit = { version = "0.29.0" }
 # logging
-log = { workspace = true }
+log = { version = "0.4.20" }
 simple_logger = { version = "4.3.3", features = ["colors", "threads", "stderr"] }
 # executable
 clap = { version = "4.5.1", features = ["derive"] }

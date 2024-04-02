@@ -6,7 +6,7 @@ edition = "2021"
 [dependencies]
 anyhow = { version = "1.0.80" }
 cgmath = { workspace = true, features = ["bytemuck"] }
-log = { workspace = true }
+log = { version = "0.4.20" }
 terminal = { version = "0.0.1", path = "../terminal" }
 
 [target.'cfg(windows)'.dependencies]

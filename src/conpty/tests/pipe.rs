@@ -1,3 +1,4 @@
+#![cfg(windows)]
 use std::io::{Read,Write};
 use test_log::test;
 use conpty::pipe::create_pipe;

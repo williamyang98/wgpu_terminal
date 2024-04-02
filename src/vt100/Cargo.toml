@@ -4,6 +4,6 @@ version = "0.0.1"
 edition = "2021"
 
 [dependencies]
-cgmath = { git = "https://github.com/rustgd/cgmath.git", version = "0.18.0", features = ["bytemuck"] }
+cgmath = { workspace = true, features = ["bytemuck"] }
 bitflags = { version = "2.4.2" }
 log = { version = "0.4.20" }

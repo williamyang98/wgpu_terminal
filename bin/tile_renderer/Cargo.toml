@@ -4,8 +4,8 @@ version = "0.0.1"
 edition = "2021"
 
 [dependencies]
-bytemuck = { workspace = true, features = ["derive" ] }
+bytemuck = { version = "1.14.3", features = ["derive" ] }
 cgmath = { workspace = true, features = ["bytemuck"] }
 fontdue = { workspace = true }
 wgpu = { workspace = true }
-log = { workspace = true }
+log = { version = "0.4.20" }

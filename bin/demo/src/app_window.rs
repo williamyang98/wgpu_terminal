@@ -151,7 +151,7 @@ impl<'a> AppWindow<'a> {
     }
 
     fn on_mouse_input(&mut self, button: MouseButton, state: ElementState) {
-        use vt100::encoder::{MouseButton as TMouseButton};
+        use vt100::encoder::MouseButton as TMouseButton;
         let button = match button {
             MouseButton::Left => TMouseButton::LeftClick,
             MouseButton::Right => TMouseButton::RightClick,
@@ -322,6 +322,8 @@ impl<'a> AppWindow<'a> {
                 KeyCode::Backspace => return key_press(TKey::FunctionKey(FunctionKey::Backspace)),
                 KeyCode::Enter     => return key_press(TKey::FunctionKey(FunctionKey::Enter)),
                 KeyCode::Delete    => return key_press(TKey::FunctionKey(FunctionKey::Delete)),
+                KeyCode::Home      => return key_press(TKey::FunctionKey(FunctionKey::Home)),
+                KeyCode::End       => return key_press(TKey::FunctionKey(FunctionKey::End)),
                 _ => {},
             }
         }
@@ -330,8 +332,6 @@ impl<'a> AppWindow<'a> {
             let size = self.terminal_renderer.get_size();
             let mut is_render = true;
             match code {
-                KeyCode::End      => self.terminal_renderer.scroll_to_bottom(),
-                KeyCode::Home     => self.terminal_renderer.scroll_to_top(),
                 KeyCode::PageDown => self.terminal_renderer.scroll_down(size.y),
                 KeyCode::PageUp   => self.terminal_renderer.scroll_up(size.y),
                 _ => { is_render = false; },

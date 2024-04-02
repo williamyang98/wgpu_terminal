@@ -36,6 +36,7 @@ pub enum ParserError {
     InvalidCursorStyle(u16),
     InvalidWarningBellVolume(u16),
     InvalidMarginBellVolume(u16),
+    InvalidDesignate(u8),
 }
 
 pub trait ParserHandler {
@@ -254,10 +255,9 @@ impl Parser {
                 Ok(6) => self.on_success(h, Command::QueryCursorPosition),
                 _ => self.on_error(h, ParserError::Unhandled),
             },
-            b'c' => match self.try_get_numbers(1).map(|v| v[0]) {
-                Err(err) => self.on_error(h, err),
-                Ok(0) => self.on_success(h, Command::QueryTerminalIdentity),
-                _ => self.on_error(h, ParserError::Unhandled),
+            b'c' => match self.numbers.get(0).copied().unwrap_or(0) {
+                0 => self.on_success(h, Command::QueryTerminalIdentity),
+                id => self.on_success(h, Command::UnhandledDeviceQuery(id)),
             },
             b't' => self.read_window_action(h),
             // reset/set modes (this is different but similar to ESC [ ? <n> h/l
@@ -404,6 +404,8 @@ impl Parser {
                 },
                 (2004, b'h') => self.on_success(h, Command::SetBracketedPasteMode(true)),
                 (2004, b'l') => self.on_success(h, Command::SetBracketedPasteMode(false)),
+                (code, b'h') => self.on_success(h, Command::UnhandledPrivateMode(code, true)),
+                (code, b'l') => self.on_success(h, Command::UnhandledPrivateMode(code, false)),
                 (   n, b'm') => match KeyType::try_from_u16(n) {
                     Some(key_type) => self.on_success(h, Command::QueryKeyModifierOption(key_type)),
                     None => self.on_error(h, ParserError::InvalidKeyType(n)),
@@ -464,15 +466,15 @@ impl Parser {
         match b {
             b'0' => self.on_success(h, Command::SetCharacterSet(CharacterSet::LineDrawing)),
             b'B' => self.on_success(h, Command::SetCharacterSet(CharacterSet::Ascii)),
-            _ => self.on_error(h, ParserError::Unhandled),
+            _ => self.on_error(h, ParserError::InvalidDesignate(b)),
         }
     }
 
     fn read_operating_system_command(&mut self, b: u8, h: &mut impl ParserHandler) {
         // @mark: ESC ] <n> <string> <terminator>
-        let Some(n) = self.numbers.first() else {
-            self.on_error(h, ParserError::Unhandled);
-            return;
+        let n = match self.try_get_numbers(1).map(|v| v[0]) {
+            Ok(v) => v,
+            Err(err) => return self.on_error(h, err),
         };
 
         const CHAR_BELL: u8 = 7u8;
@@ -511,7 +513,7 @@ impl Parser {
                 Ok(title) => self.on_success(h, Command::SetHyperlink(title)),
                 Err(error) => self.on_error(h, ParserError::InvalidUtf8String(error)),
             },
-            _ => self.on_error(h, ParserError::Unhandled),
+            _ => self.on_success(h, Command::UnhandledOperatingSystemCommand(n, data.to_vec())),
         }
     }
  

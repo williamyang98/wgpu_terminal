@@ -105,5 +105,9 @@ pub enum Command {
     SetKeyModifierOption(KeyType, Option<u16>),
     // soft reset
     SoftReset,
+    // unhandled but valid commands
+    UnhandledDeviceQuery(u16),
+    UnhandledPrivateMode(u16,bool),
+    UnhandledOperatingSystemCommand(u16, Vec<u8>),
 }
 

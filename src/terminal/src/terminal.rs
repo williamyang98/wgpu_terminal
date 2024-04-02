@@ -646,6 +646,8 @@ impl TerminalUser {
             },
             TerminalUserEvent::MouseMove(pos) => {
                 self.mouse_position = pos;
+                let mut encoder = self.encoder.lock().unwrap();
+                encoder.on_mouse_event(MouseEvent::Move(self.mouse_position), process_write);
             },
             TerminalUserEvent::MousePress(button) => {
                 let mut encoder = self.encoder.lock().unwrap();

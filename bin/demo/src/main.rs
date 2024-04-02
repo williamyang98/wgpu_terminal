@@ -54,8 +54,8 @@ fn main() -> anyhow::Result<()> {
     }
 
     simple_logger::SimpleLogger::new()
-        .env()
         .with_level(log::LevelFilter::Error)
+        .env()
         .with_colors(true)
         .without_timestamps()
         .init()?;

@@ -60,6 +60,8 @@ pub enum FunctionKey {
     Enter,
     LineFeed,
     Delete,
+    Home,
+    End,
 }
 
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
@@ -95,8 +97,8 @@ pub enum MouseCoordinateFormat {
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
 pub enum MouseButton {
     LeftClick,
-    RightClick,
     MiddleClick,
+    RightClick,
     WheelUp,
     WheelDown,
     WheelLeft,
@@ -108,6 +110,7 @@ pub enum MouseButton {
 pub enum MouseEvent {
     ButtonPress(MouseButton, Vector2<usize>),
     ButtonRelease(MouseButton, Vector2<usize>),
+    Move(Vector2<usize>),
 }
 
 bitflags! {
@@ -115,8 +118,8 @@ bitflags! {
     struct ActiveMouseButtons: u8 {
         const None        = 0b0000_0001;
         const LeftClick   = 0b0000_0001;
-        const RightClick  = 0b0000_0010;
-        const MiddleClick = 0b0000_0100;
+        const MiddleClick = 0b0000_0010;
+        const RightClick  = 0b0000_0100;
         const WheelUp     = 0b0000_1000;
         const WheelDown   = 0b0001_0000;
         const WheelLeft   = 0b0010_0000;
@@ -201,13 +204,15 @@ impl Encoder {
 
     fn on_function_key(&mut self, key: FunctionKey, output: &mut impl FnMut(&[u8])) {
         // Figure C-2: Function key control codes
-        let data = match key {
+        let data: &'static [u8] = match key {
             FunctionKey::Escape    => b"\x1b",
             FunctionKey::Tab       => b"\x09",
             FunctionKey::Backspace => b"\x08",
             FunctionKey::Enter     => b"\x0d",
             FunctionKey::LineFeed  => b"\x0a",
             FunctionKey::Delete    => b"\x7f",
+            FunctionKey::Home      => b"\x1b[H",
+            FunctionKey::End       => b"\x1b[F",
         };
         output(data);
     }
@@ -308,6 +313,7 @@ impl Encoder {
         match event {
             MouseEvent::ButtonPress(button, _) => self.active_mouse_buttons.insert(mouse_button_to_flag(button)),
             MouseEvent::ButtonRelease(button, _) => self.active_mouse_buttons.remove(mouse_button_to_flag(button)),
+            MouseEvent::Move(_) => {},
         }
         match self.mouse_tracking_mode {
             MouseTrackingMode::Disabled => {},
@@ -316,8 +322,8 @@ impl Encoder {
                     let event_code: u8 = match button {
                         // https://invisible-island.net/xterm/ctlseqs/ctlseqs.html#h3-X10-compatibility-mode
                         MouseButton::LeftClick   => 0,
-                        MouseButton::RightClick  => 1,
-                        MouseButton::MiddleClick => 2,
+                        MouseButton::MiddleClick => 1,
+                        MouseButton::RightClick  => 2,
                         // https://invisible-island.net/xterm/ctlseqs/ctlseqs.html#h3-Wheel-mice
                         MouseButton::WheelUp     => 64,
                         MouseButton::WheelDown   => 64+1,
@@ -335,17 +341,16 @@ impl Encoder {
                 }
             },
             MouseTrackingMode::Normal | MouseTrackingMode::Motion | MouseTrackingMode::Any => {
-                // let report_motion_event =
-                //     (self.mouse_tracking_mode == MouseTrackingMode::Motion && !self.active_mouse_buttons.is_empty()) ||
-                //     (self.mouse_tracking_mode == MouseTrackingMode::Any);
-                let report_motion_event = false;
+                let report_motion_event =
+                    (self.mouse_tracking_mode == MouseTrackingMode::Motion && !self.active_mouse_buttons.is_empty()) ||
+                    (self.mouse_tracking_mode == MouseTrackingMode::Any);
                 let (mut button_event_code, is_pressed, position) = match event {
                     MouseEvent::ButtonPress(button, position) => {
                         let mut data = 0u8;
                         match button {
                             MouseButton::LeftClick   => { data |= 0b0000_0000; },
-                            MouseButton::RightClick  => { data |= 0b0000_0001; },
-                            MouseButton::MiddleClick => { data |= 0b0000_0010; },
+                            MouseButton::MiddleClick => { data |= 0b0000_0001; },
+                            MouseButton::RightClick  => { data |= 0b0000_0010; },
                             _ => return, // no encoding for this
                         }
                         (data, true, position)
@@ -354,13 +359,26 @@ impl Encoder {
                         let data = 0b0000_0011;
                         (data, false, position)
                     },
+                    MouseEvent::Move(position) => {
+                        if !report_motion_event {
+                            return;
+                        }
+                        let mut data = 0u8;
+                        if self.active_mouse_buttons.contains(ActiveMouseButtons::LeftClick) {
+                            data |= 0b0000_0000;
+                        } else if self.active_mouse_buttons.contains(ActiveMouseButtons::MiddleClick) {
+                            data |= 0b0000_0001;
+                        } else if self.active_mouse_buttons.contains(ActiveMouseButtons::RightClick) {
+                            data |= 0b0000_0010;
+                        }
+                        data |= 0b0010_0000; 
+                        let is_pressed = !self.active_mouse_buttons.is_empty();
+                        (data, is_pressed, position)
+                    },
                 };
                 if self.modifier_key.contains(ModifierKey::Shift) { button_event_code |= 0b0000_0100; }
                 if self.modifier_key.contains(ModifierKey::Meta)  { button_event_code |= 0b0000_1000; }
                 if self.modifier_key.contains(ModifierKey::Ctrl)  { button_event_code |= 0b0001_0000; }
-                if report_motion_event { 
-                    button_event_code |= 0b0010_0000; 
-                }
                 match self.mouse_coordinate_format {
                     MouseCoordinateFormat::X10 | MouseCoordinateFormat::Utf8 => {
                         self.encode_buffer.extend_from_slice(b"\x1b[M");

@@ -425,6 +425,7 @@ mod tests {
     #[test]
     fn valid_query_state() {
         test_valid_sequence(b"[6n", &[Command::QueryCursorPosition]);
+        test_valid_sequence(b"[c",  &[Command::QueryTerminalIdentity]);
         test_valid_sequence(b"[0c", &[Command::QueryTerminalIdentity]);
     }
 

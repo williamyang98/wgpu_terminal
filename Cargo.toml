@@ -1,14 +1,12 @@
 [workspace]
 resolver = "2"
 members = [
-    "bin/demo",
-    "bin/tile_renderer",
-    "src/circular_buffer",
-    "src/circular_buffer_channel",
-    "src/terminal",
-    "src/terminal_process",
-    "src/conpty",
+    "bin/*",
+    "src/*",
+]
+exclude = [
     "src/unix_pty",
+    "src/conpty",
 ]
 
 [workspace.dependencies]

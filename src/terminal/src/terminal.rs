@@ -70,7 +70,7 @@ pub struct TerminalBuilder {
 impl Terminal {
     pub fn new(mut builder: TerminalBuilder) -> Self {
         let mut display = TerminalDisplay::default();
-        display.is_newline_carriage_return = builder.is_newline_carriage_return;
+        display.set_is_newline_carriage_return(builder.is_newline_carriage_return);
         let display = Arc::new(Mutex::new(display));
         let encoder = Arc::new(Mutex::new(Vt100Encoder::default()));
         // default colour table
@@ -155,64 +155,65 @@ struct ParserHandler {
 impl ParserHandler {
     fn set_graphic_style(&mut self, style: GraphicStyle) {
         let mut display = self.display.lock().unwrap();
+        let viewport = display.get_current_viewport_mut();
         match style {
-            GraphicStyle::ResetAll => { display.pen = display.default_pen; },
+            GraphicStyle::ResetAll => { viewport.pen = viewport.default_pen; },
             // flags
-            GraphicStyle::EnableBold => { display.pen.style_flags |= StyleFlags::Bold; },
-            GraphicStyle::EnableDim => { display.pen.style_flags |= StyleFlags::Dim; },
-            GraphicStyle::EnableItalic => { display.pen.style_flags |= StyleFlags::Italic; },
-            GraphicStyle::EnableUnderline => { display.pen.style_flags |= StyleFlags::Underline; },
-            GraphicStyle::EnableBlinking => { display.pen.style_flags |= StyleFlags::Blinking; },
-            GraphicStyle::EnableInverse => { display.pen.style_flags |= StyleFlags::Inverse; },
-            GraphicStyle::EnableHidden => { display.pen.style_flags |= StyleFlags::Hidden; },
-            GraphicStyle::EnableStrikethrough => { display.pen.style_flags |= StyleFlags::Strikethrough; },
-            GraphicStyle::DisableWeight => { display.pen.style_flags &= !(StyleFlags::Bold | StyleFlags::Dim); },
-            GraphicStyle::DisableItalic => { display.pen.style_flags &= !StyleFlags::Italic; },
-            GraphicStyle::DisableUnderline => { display.pen.style_flags &= !StyleFlags::Underline; },
-            GraphicStyle::DisableBlinking => { display.pen.style_flags &= !StyleFlags::Blinking; },
-            GraphicStyle::DisableInverse => { display.pen.style_flags &= !StyleFlags::Inverse; },
-            GraphicStyle::DisableHidden => { display.pen.style_flags &= !StyleFlags::Hidden; },
-            GraphicStyle::DisableStrikethrough => { display.pen.style_flags &= !StyleFlags::Strikethrough; },
+            GraphicStyle::EnableBold => { viewport.pen.style_flags |= StyleFlags::Bold; },
+            GraphicStyle::EnableDim => { viewport.pen.style_flags |= StyleFlags::Dim; },
+            GraphicStyle::EnableItalic => { viewport.pen.style_flags |= StyleFlags::Italic; },
+            GraphicStyle::EnableUnderline => { viewport.pen.style_flags |= StyleFlags::Underline; },
+            GraphicStyle::EnableBlinking => { viewport.pen.style_flags |= StyleFlags::Blinking; },
+            GraphicStyle::EnableInverse => { viewport.pen.style_flags |= StyleFlags::Inverse; },
+            GraphicStyle::EnableHidden => { viewport.pen.style_flags |= StyleFlags::Hidden; },
+            GraphicStyle::EnableStrikethrough => { viewport.pen.style_flags |= StyleFlags::Strikethrough; },
+            GraphicStyle::DisableWeight => { viewport.pen.style_flags &= !(StyleFlags::Bold | StyleFlags::Dim); },
+            GraphicStyle::DisableItalic => { viewport.pen.style_flags &= !StyleFlags::Italic; },
+            GraphicStyle::DisableUnderline => { viewport.pen.style_flags &= !StyleFlags::Underline; },
+            GraphicStyle::DisableBlinking => { viewport.pen.style_flags &= !StyleFlags::Blinking; },
+            GraphicStyle::DisableInverse => { viewport.pen.style_flags &= !StyleFlags::Inverse; },
+            GraphicStyle::DisableHidden => { viewport.pen.style_flags &= !StyleFlags::Hidden; },
+            GraphicStyle::DisableStrikethrough => { viewport.pen.style_flags &= !StyleFlags::Strikethrough; },
             // foreground colours
-            GraphicStyle::ForegroundBlack => { display.pen.foreground_colour = self.colour_table[0]; },
-            GraphicStyle::ForegroundRed => { display.pen.foreground_colour = self.colour_table[1]; },
-            GraphicStyle::ForegroundGreen => { display.pen.foreground_colour = self.colour_table[2]; },
-            GraphicStyle::ForegroundYellow => { display.pen.foreground_colour = self.colour_table[3]; },
-            GraphicStyle::ForegroundBlue => { display.pen.foreground_colour = self.colour_table[4]; },
-            GraphicStyle::ForegroundMagenta => { display.pen.foreground_colour = self.colour_table[5]; },
-            GraphicStyle::ForegroundCyan => { display.pen.foreground_colour = self.colour_table[6]; },
-            GraphicStyle::ForegroundWhite => { display.pen.foreground_colour = self.colour_table[7]; },
+            GraphicStyle::ForegroundBlack => { viewport.pen.foreground_colour = self.colour_table[0]; },
+            GraphicStyle::ForegroundRed => { viewport.pen.foreground_colour = self.colour_table[1]; },
+            GraphicStyle::ForegroundGreen => { viewport.pen.foreground_colour = self.colour_table[2]; },
+            GraphicStyle::ForegroundYellow => { viewport.pen.foreground_colour = self.colour_table[3]; },
+            GraphicStyle::ForegroundBlue => { viewport.pen.foreground_colour = self.colour_table[4]; },
+            GraphicStyle::ForegroundMagenta => { viewport.pen.foreground_colour = self.colour_table[5]; },
+            GraphicStyle::ForegroundCyan => { viewport.pen.foreground_colour = self.colour_table[6]; },
+            GraphicStyle::ForegroundWhite => { viewport.pen.foreground_colour = self.colour_table[7]; },
             GraphicStyle::ForegroundExtended => { log::info!("[vt100] GraphicStyle({:?})", style); },
-            GraphicStyle::ForegroundDefault => { display.pen.foreground_colour = display.default_pen.foreground_colour; },
+            GraphicStyle::ForegroundDefault => { viewport.pen.foreground_colour = viewport.default_pen.foreground_colour; },
             // background colours
-            GraphicStyle::BackgroundBlack => { display.pen.background_colour = self.colour_table[0]; },
-            GraphicStyle::BackgroundRed => { display.pen.background_colour = self.colour_table[1]; },
-            GraphicStyle::BackgroundGreen => { display.pen.background_colour = self.colour_table[2]; },
-            GraphicStyle::BackgroundYellow => { display.pen.background_colour = self.colour_table[3]; },
-            GraphicStyle::BackgroundBlue => { display.pen.background_colour = self.colour_table[4]; },
-            GraphicStyle::BackgroundMagenta => { display.pen.background_colour = self.colour_table[5]; },
-            GraphicStyle::BackgroundCyan => { display.pen.background_colour = self.colour_table[6]; },
-            GraphicStyle::BackgroundWhite => { display.pen.background_colour = self.colour_table[7]; },
+            GraphicStyle::BackgroundBlack => { viewport.pen.background_colour = self.colour_table[0]; },
+            GraphicStyle::BackgroundRed => { viewport.pen.background_colour = self.colour_table[1]; },
+            GraphicStyle::BackgroundGreen => { viewport.pen.background_colour = self.colour_table[2]; },
+            GraphicStyle::BackgroundYellow => { viewport.pen.background_colour = self.colour_table[3]; },
+            GraphicStyle::BackgroundBlue => { viewport.pen.background_colour = self.colour_table[4]; },
+            GraphicStyle::BackgroundMagenta => { viewport.pen.background_colour = self.colour_table[5]; },
+            GraphicStyle::BackgroundCyan => { viewport.pen.background_colour = self.colour_table[6]; },
+            GraphicStyle::BackgroundWhite => { viewport.pen.background_colour = self.colour_table[7]; },
             GraphicStyle::BackgroundExtended => { log::info!("[vt100] GraphicStyle({:?})", style); },
-            GraphicStyle::BackgroundDefault => { display.pen.background_colour = display.default_pen.background_colour; },
+            GraphicStyle::BackgroundDefault => { viewport.pen.background_colour = viewport.default_pen.background_colour; },
             // bright foreground colours
-            GraphicStyle::BrightForegroundBlack => { display.pen.foreground_colour = self.colour_table[0]; },
-            GraphicStyle::BrightForegroundRed => { display.pen.foreground_colour = self.colour_table[1]; },
-            GraphicStyle::BrightForegroundGreen => { display.pen.foreground_colour = self.colour_table[2]; },
-            GraphicStyle::BrightForegroundYellow => { display.pen.foreground_colour = self.colour_table[3]; },
-            GraphicStyle::BrightForegroundBlue => { display.pen.foreground_colour = self.colour_table[4]; },
-            GraphicStyle::BrightForegroundMagenta => { display.pen.foreground_colour = self.colour_table[5]; },
-            GraphicStyle::BrightForegroundCyan => { display.pen.foreground_colour = self.colour_table[6]; },
-            GraphicStyle::BrightForegroundWhite => { display.pen.foreground_colour = self.colour_table[7]; },
+            GraphicStyle::BrightForegroundBlack => { viewport.pen.foreground_colour = self.colour_table[0]; },
+            GraphicStyle::BrightForegroundRed => { viewport.pen.foreground_colour = self.colour_table[1]; },
+            GraphicStyle::BrightForegroundGreen => { viewport.pen.foreground_colour = self.colour_table[2]; },
+            GraphicStyle::BrightForegroundYellow => { viewport.pen.foreground_colour = self.colour_table[3]; },
+            GraphicStyle::BrightForegroundBlue => { viewport.pen.foreground_colour = self.colour_table[4]; },
+            GraphicStyle::BrightForegroundMagenta => { viewport.pen.foreground_colour = self.colour_table[5]; },
+            GraphicStyle::BrightForegroundCyan => { viewport.pen.foreground_colour = self.colour_table[6]; },
+            GraphicStyle::BrightForegroundWhite => { viewport.pen.foreground_colour = self.colour_table[7]; },
             // bright background colours
-            GraphicStyle::BrightBackgroundBlack => { display.pen.background_colour = self.colour_table[0]; },
-            GraphicStyle::BrightBackgroundRed => { display.pen.background_colour = self.colour_table[1]; },
-            GraphicStyle::BrightBackgroundGreen => { display.pen.background_colour = self.colour_table[2]; },
-            GraphicStyle::BrightBackgroundYellow => { display.pen.background_colour = self.colour_table[3]; },
-            GraphicStyle::BrightBackgroundBlue => { display.pen.background_colour = self.colour_table[4]; },
-            GraphicStyle::BrightBackgroundMagenta => { display.pen.background_colour = self.colour_table[5]; },
-            GraphicStyle::BrightBackgroundCyan => { display.pen.background_colour = self.colour_table[6]; },
-            GraphicStyle::BrightBackgroundWhite => { display.pen.background_colour = self.colour_table[7]; },
+            GraphicStyle::BrightBackgroundBlack => { viewport.pen.background_colour = self.colour_table[0]; },
+            GraphicStyle::BrightBackgroundRed => { viewport.pen.background_colour = self.colour_table[1]; },
+            GraphicStyle::BrightBackgroundGreen => { viewport.pen.background_colour = self.colour_table[2]; },
+            GraphicStyle::BrightBackgroundYellow => { viewport.pen.background_colour = self.colour_table[3]; },
+            GraphicStyle::BrightBackgroundBlue => { viewport.pen.background_colour = self.colour_table[4]; },
+            GraphicStyle::BrightBackgroundMagenta => { viewport.pen.background_colour = self.colour_table[5]; },
+            GraphicStyle::BrightBackgroundCyan => { viewport.pen.background_colour = self.colour_table[6]; },
+            GraphicStyle::BrightBackgroundWhite => { viewport.pen.background_colour = self.colour_table[7]; },
         }
     }
 
@@ -221,10 +222,10 @@ impl ParserHandler {
 impl TerminalParserHandler for ParserHandler {
     fn on_ascii_data(&mut self, buf: &[u8]) {
         let mut display = self.display.lock().unwrap();
+        let viewport = display.get_current_viewport_mut();
         for b in buf {
-            display.write_ascii(*b);
+            viewport.write_ascii(*b);
         }
-        drop(display);
         let window_action = &mut self.window_action;
         window_action(WindowAction::Refresh);
     }
@@ -232,8 +233,8 @@ impl TerminalParserHandler for ParserHandler {
     fn on_utf8(&mut self, character: char) {
         let window_action = &mut self.window_action;
         let mut display = self.display.lock().unwrap();
-        display.write_utf8(character);
-        drop(display);
+        let viewport = display.get_current_viewport_mut();
+        viewport.write_utf8(character);
         window_action(WindowAction::Refresh);
     }
 
@@ -257,6 +258,7 @@ impl TerminalParserHandler for ParserHandler {
             },
             Vt100Command::SetBackgroundColourRgb(rgb) => {
                 let mut display = self.display.lock().unwrap();
+                let viewport = display.get_current_viewport_mut();
                 // FIXME: Why is the background so bright???
                 const A: u8 = 7;
                 let rgb = Rgb8 { 
@@ -264,10 +266,11 @@ impl TerminalParserHandler for ParserHandler {
                     g: rgb.g / A,
                     b: rgb.b / A,
                 };
-                display.pen.background_colour = rgb;
+                viewport.pen.background_colour = rgb;
             },
             Vt100Command::SetForegroundColourRgb(rgb) => {
                 let mut display = self.display.lock().unwrap();
+                let viewport = display.get_current_viewport_mut();
                 // FIXME: Why is the foreground so desaturated???
                 const A: u8 = 20;
                 let rgb = Rgb8 { 
@@ -275,27 +278,30 @@ impl TerminalParserHandler for ParserHandler {
                     g: rgb.g.saturating_sub(A),
                     b: rgb.b.saturating_sub(A),
                 };
-                display.pen.foreground_colour = rgb;
+                viewport.pen.foreground_colour = rgb;
             },
             Vt100Command::SetBackgroundColourTable(index) => {
                 let mut display = self.display.lock().unwrap();
+                let viewport = display.get_current_viewport_mut();
                 let colour = self.colour_table[index as usize];
-                display.pen.background_colour = colour;
+                viewport.pen.background_colour = colour;
             },
             Vt100Command::SetForegroundColourTable(index) => {
                 let mut display = self.display.lock().unwrap();
+                let viewport = display.get_current_viewport_mut();
                 let colour = self.colour_table[index as usize];
-                display.pen.foreground_colour = colour;
+                viewport.pen.foreground_colour = colour;
             },
             // erase data
             Vt100Command::EraseInDisplay(mode) => match mode {
                 EraseMode::FromCursorToEnd => {
                     let mut display = self.display.lock().unwrap();
-                    let pen = display.pen;
-                    let size = display.get_size();
-                    let cursor = display.get_cursor();
+                    let viewport = display.get_current_viewport_mut();
+                    let pen = viewport.pen;
+                    let size = viewport.get_size();
+                    let cursor = viewport.get_cursor();
                     for y in (cursor.y+1)..size.y {
-                        let (line, status) = display.get_row_mut(y);
+                        let (line, status) = viewport.get_row_mut(y);
                         line.iter_mut().for_each(|c| {
                             c.character = ' '; 
                             c.pen = pen;
@@ -303,7 +309,7 @@ impl TerminalParserHandler for ParserHandler {
                         status.length = size.x;
                         status.is_linebreak = true;
                     }
-                    let (line, status) = display.get_row_mut(cursor.y);
+                    let (line, status) = viewport.get_row_mut(cursor.y);
                     line[cursor.x..status.length].iter_mut().for_each(|c| {
                         c.character = ' ';
                         c.pen = pen;
@@ -312,11 +318,12 @@ impl TerminalParserHandler for ParserHandler {
                 },
                 EraseMode::FromCursorToStart => {
                     let mut display = self.display.lock().unwrap();
-                    let pen = display.pen;
-                    let size = display.get_size();
-                    let cursor = display.get_cursor();
+                    let viewport = display.get_current_viewport_mut();
+                    let pen = viewport.pen;
+                    let size = viewport.get_size();
+                    let cursor = viewport.get_cursor();
                     for y in 0..cursor.y {
-                        let (line, status) = display.get_row_mut(y);
+                        let (line, status) = viewport.get_row_mut(y);
                         line.iter_mut().for_each(|c| {
                             c.character = ' '; 
                             c.pen = pen;
@@ -324,7 +331,7 @@ impl TerminalParserHandler for ParserHandler {
                         status.length = size.x;
                         status.is_linebreak = true;
                     }
-                    let (line, _) = display.get_row_mut(cursor.y);
+                    let (line, _) = viewport.get_row_mut(cursor.y);
                     line[..=cursor.x].iter_mut().for_each(|c| {
                         c.character = ' ';
                         c.pen = pen;
@@ -333,10 +340,11 @@ impl TerminalParserHandler for ParserHandler {
                 },
                 EraseMode::EntireDisplay | EraseMode::SavedLines => {
                     let mut display = self.display.lock().unwrap();
-                    let pen = display.pen;
-                    let size = display.get_size();
+                    let viewport = display.get_current_viewport_mut();
+                    let pen = viewport.pen;
+                    let size = viewport.get_size();
                     for y in 0..size.y {
-                        let (line, status) = display.get_row_mut(y);
+                        let (line, status) = viewport.get_row_mut(y);
                         line.iter_mut().for_each(|c| {
                             c.character = ' '; 
                             c.pen = pen;
@@ -350,10 +358,11 @@ impl TerminalParserHandler for ParserHandler {
             Vt100Command::EraseInLine(mode) => match mode {
                 EraseMode::FromCursorToEnd => {
                     let mut display = self.display.lock().unwrap();
-                    let pen = display.pen;
-                    let size = display.get_size();
-                    let cursor = display.get_cursor();
-                    let (line, status) = display.get_row_mut(cursor.y);
+                    let viewport = display.get_current_viewport_mut();
+                    let pen = viewport.pen;
+                    let size = viewport.get_size();
+                    let cursor = viewport.get_cursor();
+                    let (line, status) = viewport.get_row_mut(cursor.y);
                     line[cursor.x..].iter_mut().for_each(|c| {
                         c.character = ' '; 
                         c.pen = pen;
@@ -364,9 +373,10 @@ impl TerminalParserHandler for ParserHandler {
                 },
                 EraseMode::FromCursorToStart => {
                     let mut display = self.display.lock().unwrap();
-                    let pen = display.pen;
-                    let cursor = display.get_cursor();
-                    let (line, _) = display.get_row_mut(cursor.y);
+                    let viewport = display.get_current_viewport_mut();
+                    let pen = viewport.pen;
+                    let cursor = viewport.get_cursor();
+                    let (line, _) = viewport.get_row_mut(cursor.y);
                     line[..=cursor.x].iter_mut().for_each(|c| {
                         c.character = ' '; 
                         c.pen = pen;
@@ -375,10 +385,11 @@ impl TerminalParserHandler for ParserHandler {
                 },
                 EraseMode::EntireDisplay | EraseMode::SavedLines => {
                     let mut display = self.display.lock().unwrap();
-                    let pen = display.pen;
-                    let size = display.get_size();
-                    let cursor = display.get_cursor();
-                    let (line, status) = display.get_row_mut(cursor.y);
+                    let viewport = display.get_current_viewport_mut();
+                    let pen = viewport.pen;
+                    let size = viewport.get_size();
+                    let cursor = viewport.get_cursor();
+                    let (line, status) = viewport.get_row_mut(cursor.y);
                     line.iter_mut().for_each(|c| {
                         c.character = ' ';
                         c.pen = pen;
@@ -390,9 +401,10 @@ impl TerminalParserHandler for ParserHandler {
             },
             Vt100Command::ReplaceWithSpaces(total) => {
                 let mut display = self.display.lock().unwrap();
-                let pen = display.pen;
-                let cursor = display.get_cursor();
-                let (line, _) = display.get_row_mut(cursor.y);
+                let viewport = display.get_current_viewport_mut();
+                let pen = viewport.pen;
+                let cursor = viewport.get_cursor();
+                let (line, _) = viewport.get_row_mut(cursor.y);
                 let region = &mut line[cursor.x..];
                 let total = (total as usize).min(region.len());
                 region[..total].iter_mut().for_each(|c| {
@@ -403,9 +415,10 @@ impl TerminalParserHandler for ParserHandler {
             },
             Vt100Command::InsertSpaces(total) => {
                 let mut display = self.display.lock().unwrap();
-                let pen = display.pen;
-                let cursor = display.get_cursor();
-                let (line, status) = display.get_row_mut(cursor.y);
+                let viewport = display.get_current_viewport_mut();
+                let pen = viewport.pen;
+                let cursor = viewport.get_cursor();
+                let (line, status) = viewport.get_row_mut(cursor.y);
                 let region = &mut line[cursor.x..];
                 let total = (total as usize).min(region.len());
                 let shift = region.len()-total;
@@ -419,8 +432,9 @@ impl TerminalParserHandler for ParserHandler {
             },
             Vt100Command::DeleteCharacters(total) => {
                 let mut display = self.display.lock().unwrap();
-                let cursor = display.get_cursor();
-                let (line, status) = display.get_row_mut(cursor.y);
+                let viewport = display.get_current_viewport_mut();
+                let cursor = viewport.get_cursor();
+                let (line, status) = viewport.get_row_mut(cursor.y);
                 let region = &mut line[(cursor.x+1)..];
                 let total = (total as usize).min(region.len());
                 region.copy_within(total.., 0);
@@ -429,14 +443,15 @@ impl TerminalParserHandler for ParserHandler {
             },
             Vt100Command::InsertLines(total_insert) => {
                 let mut display = self.display.lock().unwrap();
-                let cursor = display.get_cursor();
-                let size = display.get_size();
+                let viewport = display.get_current_viewport_mut();
+                let cursor = viewport.get_cursor();
+                let size = viewport.get_size();
                 let lines_at_cursor = size.y-cursor.y;
                 let total_insert = (total_insert as usize).min(lines_at_cursor);
                 let total_copy = lines_at_cursor-total_insert;
-                display.copy_lines_within(cursor.y, cursor.y+total_insert, total_copy);
+                viewport.copy_lines_within(cursor.y, cursor.y+total_insert, total_copy);
                 for i in 0..total_insert {
-                    let (_, status) = display.get_row_mut(cursor.y+i);
+                    let (_, status) = viewport.get_row_mut(cursor.y+i);
                     status.length = 0;
                     status.is_linebreak = true;
                 }
@@ -444,14 +459,15 @@ impl TerminalParserHandler for ParserHandler {
             },
             Vt100Command::DeleteLines(total_delete) => {
                 let mut display = self.display.lock().unwrap();
-                let cursor = display.get_cursor();
-                let size = display.get_size();
+                let viewport = display.get_current_viewport_mut();
+                let cursor = viewport.get_cursor();
+                let size = viewport.get_size();
                 let lines_at_cursor = size.y-cursor.y;
                 let total_delete = (total_delete as usize).min(lines_at_cursor);
                 let total_copy = lines_at_cursor-total_delete;
-                display.copy_lines_within(cursor.y+total_delete, cursor.y, total_copy);
+                viewport.copy_lines_within(cursor.y+total_delete, cursor.y, total_copy);
                 for i in 0..total_delete {
-                    let (_, status) = display.get_row_mut(cursor.y+total_copy+i);
+                    let (_, status) = viewport.get_row_mut(cursor.y+total_copy+i);
                     status.length = 0;
                     status.is_linebreak = true;
                 }
@@ -459,73 +475,83 @@ impl TerminalParserHandler for ParserHandler {
             },
             Vt100Command::MoveCursorPositionViewport(pos) => {
                 let mut display = self.display.lock().unwrap();
+                let viewport = display.get_current_viewport_mut();
                 // top left corner is (1,1)
                 let x = pos.x.saturating_sub(1) as usize;
                 let y = pos.y.saturating_sub(1) as usize;
-                display.set_cursor(Vector2::new(x,y));
+                viewport.set_cursor(Vector2::new(x,y));
                 window_action(WindowAction::Refresh);
             },
             Vt100Command::MoveCursorUp(total) => {
                 let mut display = self.display.lock().unwrap();
-                let mut cursor = display.get_cursor();
+                let viewport = display.get_current_viewport_mut();
+                let mut cursor = viewport.get_cursor();
                 cursor.y = cursor.y.saturating_sub(total as usize);
-                display.set_cursor(cursor);
+                viewport.set_cursor(cursor);
                 window_action(WindowAction::Refresh);
             },
             Vt100Command::MoveCursorDown(total) => {
                 let mut display = self.display.lock().unwrap();
-                let mut cursor = display.get_cursor();
+                let viewport = display.get_current_viewport_mut();
+                let mut cursor = viewport.get_cursor();
                 cursor.y += total as usize;
-                display.set_cursor(cursor);
+                viewport.set_cursor(cursor);
                 window_action(WindowAction::Refresh);
             },
             Vt100Command::MoveCursorRight(total) => {
                 let mut display = self.display.lock().unwrap();
-                let mut cursor = display.get_cursor();
+                let viewport = display.get_current_viewport_mut();
+                let mut cursor = viewport.get_cursor();
                 cursor.x += total as usize;
-                display.set_cursor(cursor);
+                viewport.set_cursor(cursor);
                 window_action(WindowAction::Refresh);
             },
             Vt100Command::MoveCursorLeft(total) => {
                 let mut display = self.display.lock().unwrap();
-                let mut cursor = display.get_cursor();
+                let viewport = display.get_current_viewport_mut();
+                let mut cursor = viewport.get_cursor();
                 cursor.x = cursor.x.saturating_sub(total as usize);
-                display.set_cursor(cursor);
+                viewport.set_cursor(cursor);
                 window_action(WindowAction::Refresh);
             },
             Vt100Command::MoveCursorReverseIndex => {
                 let mut display = self.display.lock().unwrap();
-                let mut cursor = display.get_cursor();
+                let viewport = display.get_current_viewport_mut();
+                let mut cursor = viewport.get_cursor();
                 cursor.y = cursor.y.saturating_sub(1);
-                display.set_cursor(cursor);
+                viewport.set_cursor(cursor);
                 window_action(WindowAction::Refresh);
             },
             Vt100Command::MoveCursorNextLine(total) => {
                 let mut display = self.display.lock().unwrap();
-                let mut cursor = display.get_cursor();
+                let viewport = display.get_current_viewport_mut();
+                let mut cursor = viewport.get_cursor();
                 cursor.y = total.saturating_sub(1) as usize;
-                display.set_cursor(cursor);
+                viewport.set_cursor(cursor);
                 window_action(WindowAction::Refresh);
             },
             Vt100Command::MoveCursorPreviousLine(total) => {
                 let mut display = self.display.lock().unwrap();
-                let mut cursor = display.get_cursor();
+                let viewport = display.get_current_viewport_mut();
+                let mut cursor = viewport.get_cursor();
                 cursor.y = total.saturating_sub(1) as usize;
-                display.set_cursor(cursor);
+                viewport.set_cursor(cursor);
                 window_action(WindowAction::Refresh);
             },
             Vt100Command::MoveCursorHorizontalAbsolute(total) => {
                 let mut display = self.display.lock().unwrap();
-                let mut cursor = display.get_cursor();
+                let viewport = display.get_current_viewport_mut();
+                let mut cursor = viewport.get_cursor();
                 cursor.x = total.saturating_sub(1) as usize;
-                display.set_cursor(cursor);
+                viewport.set_cursor(cursor);
                 window_action(WindowAction::Refresh);
             },
             Vt100Command::MoveCursorVerticalAbsolute(total) => {
                 let mut display = self.display.lock().unwrap();
-                let mut cursor = display.get_cursor();
+                let viewport = display.get_current_viewport_mut();
+                let mut cursor = viewport.get_cursor();
                 cursor.y = total.saturating_sub(1) as usize;
-                display.set_cursor(cursor);
+                viewport.set_cursor(cursor);
                 window_action(WindowAction::Refresh);
             },
             Vt100Command::ScrollUp(_total) => {
@@ -536,11 +562,13 @@ impl TerminalParserHandler for ParserHandler {
             },
             Vt100Command::SaveCursorToMemory => {
                 let mut display = self.display.lock().unwrap();
-                display.save_cursor();
+                let viewport = display.get_current_viewport_mut();
+                viewport.save_cursor();
             },
             Vt100Command::RestoreCursorFromMemory => {
                 let mut display = self.display.lock().unwrap();
-                display.restore_cursor();
+                let viewport = display.get_current_viewport_mut();
+                viewport.restore_cursor();
                 window_action(WindowAction::Refresh);
             },
             // cursor status
@@ -572,7 +600,7 @@ impl TerminalParserHandler for ParserHandler {
                 let mut encoder = self.encoder.lock().unwrap();
                 encoder.is_bracketed_paste_mode = is_bracketed;
             },
-            // mouse (TODO)
+            // mouse
             Vt100Command::SetMouseTrackingMode(mut mode) => {
                 if mode == MouseTrackingMode::Highlight {
                     mode = MouseTrackingMode::Normal;
@@ -590,6 +618,11 @@ impl TerminalParserHandler for ParserHandler {
             },
             // window
             Vt100Command::WindowAction(action) => window_action(action),
+            // alternate buffer
+            Vt100Command::SetAlternateBuffer(is_alternate) => {
+                let mut display = self.display.lock().unwrap();
+                display.set_is_alternate(is_alternate);
+            }
             _ => {
                 log::info!("[vt100] Unhandled: {:?}", c);
             },
@@ -642,7 +675,7 @@ impl TerminalUser {
             },
             TerminalUserEvent::SetIsNewlineCarriageReturn(is_carriage_return) => {
                 let mut display = self.display.lock().unwrap();
-                display.is_newline_carriage_return = is_carriage_return;
+                display.set_is_newline_carriage_return(is_carriage_return);
             },
             TerminalUserEvent::MouseMove(pos) => {
                 self.mouse_position = pos;

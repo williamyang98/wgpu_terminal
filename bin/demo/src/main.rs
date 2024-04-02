@@ -3,12 +3,15 @@ use terminal_process::*;
 use wgpu_terminal::app::{AppBuilder, start_app, start_headless};
 use std::sync::{Arc, Mutex};
 
-#[derive(Clone,Copy,Debug,clap::ValueEnum)]
+#[derive(Clone,Copy,Debug,Default,clap::ValueEnum)]
 enum Mode {
+    #[cfg_attr(not(any(windows, unix)), default)]
     Raw,
     #[cfg(windows)]
+    #[default]
     Conpty,
     #[cfg(unix)]
+    #[default]
     Pty,
 }
 
@@ -16,15 +19,10 @@ enum Mode {
 #[command(author, version, about, long_about = None)]
 struct Args {
     /// Filepath of shell executable
-    #[cfg(windows)]
-    #[arg(default_value = "cmd.exe")]
+    #[cfg_attr(windows, arg(default_value = "cmd.exe"))]
+    #[cfg_attr(unix, arg(default_value = "/usr/bin/bash"))]
     filename: String,
-    #[cfg(unix)]
-    #[arg(default_value = "/usr/bin/bash")]
-    filename: String,
-    #[cfg(not(any(windows, unix)))]
-    filename: String,
-    /// Filepath arguments
+    /// Executable arguments
     arguments: Vec<String>,
     /// Font size
     #[arg(long, default_value_t = 14.0)]
@@ -32,19 +30,17 @@ struct Args {
     /// Font filename 
     #[arg(long, default_value = "./res/Iosevka-custom-regular.ttf")]
     font_filename: String,
-    /// Mode
-    #[cfg(windows)]
-    #[arg(value_enum, long, default_value_t = Mode::Conpty)]
+    /// Type of process to launch
+    #[arg(value_enum, long, default_value_t = Mode::default())]
     mode: Mode,
-    #[cfg(unix)]
-    #[arg(value_enum, long, default_value_t = Mode::Pty)]
-    mode: Mode,
-    #[cfg(not(any(windows, unix)))]
-    #[arg(value_enum, long, default_value_t = Mode::Raw)]
-    mode: Mode,
-    /// Headless
+    /// Run without window by printing results to stdout
     #[arg(long, default_value_t = false)]
     headless: bool,
+    /// Show console window
+    #[cfg(windows)]
+    #[cfg_attr(debug_assertions, arg(long = "hide-console", default_value_t = true))]
+    #[cfg_attr(not(debug_assertions), arg(long = "show-console", default_value_t = false))]
+    show_console: bool,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -85,8 +81,20 @@ fn start_conpty(args: &Args) -> anyhow::Result<()> {
     command.args(args.arguments.as_slice());
     let process = conpty::process::ConptyProcess::spawn(command, None)?;
     let process = ConptyProcess::new(process);
+    show_console_window(args.show_console);
     start_terminal(args.clone(), Arc::new(Mutex::new(Box::new(process))))?;
     Ok(())
+}
+
+#[cfg(windows)]
+fn show_console_window(is_show: bool) {
+    use windows::Win32::{
+        System::Console::GetConsoleWindow,
+        UI::WindowsAndMessaging::{ShowWindow, SW_HIDE, SW_SHOW},
+    };
+    let window = unsafe { GetConsoleWindow() };
+    let command = if is_show { SW_SHOW } else { SW_HIDE };
+    let _ = unsafe { ShowWindow(window, command) };
 }
 
 fn start_raw_shell(args: &Args) -> anyhow::Result<()> {

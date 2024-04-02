@@ -26,6 +26,7 @@ anyhow = { version = "1.0.80" }
 
 [target.'cfg(windows)'.dependencies]
 conpty = { version = "0.0.1", path = "../../src/conpty" }
+windows = { version = "0.53.0", features = ["Win32_System_Console", "Win32_UI_WindowsAndMessaging"] }
 
 [target.'cfg(unix)'.dependencies]
 unix_pty = { version = "0.0.1", path = "../../src/unix_pty" }

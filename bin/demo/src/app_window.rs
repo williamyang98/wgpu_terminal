@@ -39,6 +39,15 @@ pub struct AppWindow<'a> {
     frame_counter: FrameCounter,
 }
 
+fn get_default_wgpu_backends() -> wgpu::Backends {
+    let mut backends = wgpu::Backends::default();
+    if cfg!(windows)  {
+        backends.remove(wgpu::Backends::DX12); // too much memory
+        backends.remove(wgpu::Backends::VULKAN); // resize is laggy
+    }
+    backends
+}
+
 impl<'a> AppWindow<'a> {
     pub async fn new(
         winit_window: &'a Window,
@@ -49,7 +58,7 @@ impl<'a> AppWindow<'a> {
         let terminal_user_events = terminal.get_user_event_handler();
         // wgpu
         let wgpu_instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
-            backends: wgpu::util::backend_bits_from_env().unwrap_or_default(),
+            backends: wgpu::util::backend_bits_from_env().unwrap_or_else(|| get_default_wgpu_backends()),
             flags: wgpu::InstanceFlags::from_build_config().with_env(),
             dx12_shader_compiler: wgpu::util::dx12_shader_compiler_from_env().unwrap_or_default(),
             gles_minor_version: wgpu::util::gles_minor_version_from_env().unwrap_or_default(),

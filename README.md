@@ -14,7 +14,7 @@ This is a hobby project to explore how terminal emulators are implemented and sh
 
 ## Features
 - Basic handling of VT100+ codes and UTF8 parsing
-- Scrollback buffer
+- Scrollback and alternate buffer
 - Works with Windows conpty and Linux pty
 - Wgpu full 24-bit colour renderer
 - Custom fonts

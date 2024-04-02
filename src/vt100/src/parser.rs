@@ -548,7 +548,8 @@ impl Parser {
         self.number_slice = None;
         self.numbers_last_index = Some(self.buffer.len()-1);
         // @mark: <n> ;
-        if b == b';' {
+        // @mark: <n> :
+        if [b';', b':'].contains(&b) {
             return;
         }
         self.state = ParserState::Characters;

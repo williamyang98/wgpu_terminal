@@ -198,9 +198,7 @@ impl Viewport {
         {
             let curr_row = self.get_current_row_index();
             let line_status = &mut self.row_status[curr_row];
-            if is_linebreak {
-                line_status.is_linebreak = true;
-            }
+            line_status.is_linebreak = is_linebreak;
         }
         // advance cursor
         self.cursor.y += 1;

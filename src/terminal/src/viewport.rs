@@ -1,8 +1,7 @@
 use crate::{
-    primitives::{Cell,StyleFlags, Pen},
+    primitives::{Cell, Pen},
     scrollback_buffer::ScrollbackBuffer,
 };
-use vt100::common::Rgb8;
 use cgmath::Vector2;
 
 #[derive(Clone,Copy,Default,Debug)]
@@ -32,24 +31,18 @@ pub const DEFAULT_VIEWPORT_SIZE: Vector2<usize> = Vector2::new(128,128);
 impl Default for Viewport {
     fn default() -> Self {
         let total_cells = DEFAULT_VIEWPORT_SIZE.x * DEFAULT_VIEWPORT_SIZE.y;
-        let default_pen = Pen {
-            foreground_colour: Rgb8 { r: 255, b: 255, g: 255 },
-            background_colour: Rgb8 { r: 5, b: 10, g: 7 },
-            style_flags: StyleFlags::None,
-        };
-        let default_cell = Cell { pen: default_pen, character: ' ' };
         Self {
             cursor: Vector2::new(0,0),
             size: DEFAULT_VIEWPORT_SIZE,
             row_offset: 0,
-            cells: vec![default_cell; total_cells],
+            cells: vec![Cell::default(); total_cells],
             row_status: vec![LineStatus::default(); DEFAULT_VIEWPORT_SIZE.y],
-            resize_cells: vec![default_cell; total_cells],
+            resize_cells: vec![Cell::default(); total_cells],
             resize_row_status: vec![LineStatus::default(); DEFAULT_VIEWPORT_SIZE.y],
             scrollback_buffer: None,
             saved_cursor: None,
-            pen: default_pen,
-            default_pen,
+            pen: Pen::default(),
+            default_pen: Pen::default(),
             is_newline_carriage_return: false,
         }
     }

@@ -22,7 +22,7 @@ use vt100::{
     },
 };
 use crate::{
-    primitives::StyleFlags,
+    primitives::{Pen, StyleFlags},
     colour_table::{XTERM_COLOUR_TABLE, convert_u32_to_rgb},
     terminal_parser::{TerminalParser, TerminalParserHandler},
     terminal_display::TerminalDisplay,
@@ -72,22 +72,31 @@ impl Terminal {
     pub fn new(mut builder: TerminalBuilder) -> Self {
         let mut display = TerminalDisplay::default();
         display.set_is_newline_carriage_return(builder.is_newline_carriage_return);
-        let display = Arc::new(Mutex::new(display));
-        let encoder = Arc::new(Mutex::new(Vt100Encoder::default()));
         // default colour table
         let colour_table: Vec<Rgb8> = XTERM_COLOUR_TABLE
             .iter()
-            .map(|v| {
-                const A: u8 = 80;
-                let mut rgb = convert_u32_to_rgb(*v);
-                rgb.r = rgb.r.saturating_add(A);
-                rgb.g = rgb.g.saturating_add(A);
-                rgb.b = rgb.b.saturating_add(A);
-                rgb
-            })
+            .map(|c| convert_u32_to_rgb(*c))
             .collect();
+        let is_dark_mode = true;
+        let default_pen = if is_dark_mode {
+            Pen {
+                background_colour: colour_table[0],
+                foreground_colour: colour_table[15],
+                style_flags: StyleFlags::default(),
+            }
+        } else {
+            Pen {
+                background_colour: colour_table[15],
+                foreground_colour: colour_table[0],
+                style_flags: StyleFlags::default(),
+            }
+        };
+        display.set_default_pen(default_pen);
+        display.get_current_viewport_mut().pen = default_pen;
         assert!(colour_table.len() == 256);
         // parser thread 
+        let display = Arc::new(Mutex::new(display));
+        let encoder = Arc::new(Mutex::new(Vt100Encoder::default()));
         let mut parser_handler = ParserHandler {
             display: display.clone(),
             encoder: encoder.clone(),
@@ -198,23 +207,23 @@ impl ParserHandler {
             GraphicStyle::BackgroundExtended => { log::info!("[vt100] GraphicStyle({:?})", style); },
             GraphicStyle::BackgroundDefault => { viewport.pen.background_colour = viewport.default_pen.background_colour; },
             // bright foreground colours
-            GraphicStyle::BrightForegroundBlack => { viewport.pen.foreground_colour = self.colour_table[0]; },
-            GraphicStyle::BrightForegroundRed => { viewport.pen.foreground_colour = self.colour_table[1]; },
-            GraphicStyle::BrightForegroundGreen => { viewport.pen.foreground_colour = self.colour_table[2]; },
-            GraphicStyle::BrightForegroundYellow => { viewport.pen.foreground_colour = self.colour_table[3]; },
-            GraphicStyle::BrightForegroundBlue => { viewport.pen.foreground_colour = self.colour_table[4]; },
-            GraphicStyle::BrightForegroundMagenta => { viewport.pen.foreground_colour = self.colour_table[5]; },
-            GraphicStyle::BrightForegroundCyan => { viewport.pen.foreground_colour = self.colour_table[6]; },
-            GraphicStyle::BrightForegroundWhite => { viewport.pen.foreground_colour = self.colour_table[7]; },
+            GraphicStyle::BrightForegroundBlack => { viewport.pen.foreground_colour = self.colour_table[8]; },
+            GraphicStyle::BrightForegroundRed => { viewport.pen.foreground_colour = self.colour_table[9]; },
+            GraphicStyle::BrightForegroundGreen => { viewport.pen.foreground_colour = self.colour_table[10]; },
+            GraphicStyle::BrightForegroundYellow => { viewport.pen.foreground_colour = self.colour_table[11]; },
+            GraphicStyle::BrightForegroundBlue => { viewport.pen.foreground_colour = self.colour_table[12]; },
+            GraphicStyle::BrightForegroundMagenta => { viewport.pen.foreground_colour = self.colour_table[13]; },
+            GraphicStyle::BrightForegroundCyan => { viewport.pen.foreground_colour = self.colour_table[14]; },
+            GraphicStyle::BrightForegroundWhite => { viewport.pen.foreground_colour = self.colour_table[15]; },
             // bright background colours
-            GraphicStyle::BrightBackgroundBlack => { viewport.pen.background_colour = self.colour_table[0]; },
-            GraphicStyle::BrightBackgroundRed => { viewport.pen.background_colour = self.colour_table[1]; },
-            GraphicStyle::BrightBackgroundGreen => { viewport.pen.background_colour = self.colour_table[2]; },
-            GraphicStyle::BrightBackgroundYellow => { viewport.pen.background_colour = self.colour_table[3]; },
-            GraphicStyle::BrightBackgroundBlue => { viewport.pen.background_colour = self.colour_table[4]; },
-            GraphicStyle::BrightBackgroundMagenta => { viewport.pen.background_colour = self.colour_table[5]; },
-            GraphicStyle::BrightBackgroundCyan => { viewport.pen.background_colour = self.colour_table[6]; },
-            GraphicStyle::BrightBackgroundWhite => { viewport.pen.background_colour = self.colour_table[7]; },
+            GraphicStyle::BrightBackgroundBlack => { viewport.pen.background_colour = self.colour_table[8]; },
+            GraphicStyle::BrightBackgroundRed => { viewport.pen.background_colour = self.colour_table[9]; },
+            GraphicStyle::BrightBackgroundGreen => { viewport.pen.background_colour = self.colour_table[10]; },
+            GraphicStyle::BrightBackgroundYellow => { viewport.pen.background_colour = self.colour_table[11]; },
+            GraphicStyle::BrightBackgroundBlue => { viewport.pen.background_colour = self.colour_table[12]; },
+            GraphicStyle::BrightBackgroundMagenta => { viewport.pen.background_colour = self.colour_table[13]; },
+            GraphicStyle::BrightBackgroundCyan => { viewport.pen.background_colour = self.colour_table[14]; },
+            GraphicStyle::BrightBackgroundWhite => { viewport.pen.background_colour = self.colour_table[15]; },
         }
     }
 
@@ -260,25 +269,11 @@ impl TerminalParserHandler for ParserHandler {
             Vt100Command::SetBackgroundColourRgb(rgb) => {
                 let mut display = self.display.lock().unwrap();
                 let viewport = display.get_current_viewport_mut();
-                // FIXME: Why is the background so bright???
-                const A: u8 = 7;
-                let rgb = Rgb8 { 
-                    r: rgb.r / A,
-                    g: rgb.g / A,
-                    b: rgb.b / A,
-                };
                 viewport.pen.background_colour = rgb;
             },
             Vt100Command::SetForegroundColourRgb(rgb) => {
                 let mut display = self.display.lock().unwrap();
                 let viewport = display.get_current_viewport_mut();
-                // FIXME: Why is the foreground so desaturated???
-                const A: u8 = 20;
-                let rgb = Rgb8 { 
-                    r: rgb.r.saturating_sub(A),
-                    g: rgb.g.saturating_sub(A),
-                    b: rgb.b.saturating_sub(A),
-                };
                 viewport.pen.foreground_colour = rgb;
             },
             Vt100Command::SetBackgroundColourTable(index) => {

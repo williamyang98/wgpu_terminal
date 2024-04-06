@@ -1,11 +1,10 @@
 use crate::{
     scrollback_buffer::ScrollbackBuffer,
     viewport::Viewport, 
+    primitives::Pen,
 };
 use cgmath::Vector2;
-use vt100::common::{
-    CursorStyle,
-};
+use vt100::common::CursorStyle;
 
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
 pub struct CursorStatus {
@@ -51,6 +50,11 @@ impl TerminalDisplay {
     pub(crate) fn set_is_newline_carriage_return(&mut self, is_newline_carriage_return: bool) {
         self.primary_viewport.is_newline_carriage_return = is_newline_carriage_return;
         self.alternate_viewport.is_newline_carriage_return = is_newline_carriage_return;
+    }
+
+    pub(crate) fn set_default_pen(&mut self, pen: Pen) {
+        self.primary_viewport.default_pen = pen;
+        self.alternate_viewport.default_pen = pen;
     }
 
     pub(crate) fn set_size(&mut self, size: Vector2<usize>) {

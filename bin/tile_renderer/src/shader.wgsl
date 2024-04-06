@@ -28,11 +28,11 @@ fn unpack_cell_data(data: vec4<u32>) -> Cell {
     d.colour_foreground.r = (data.g & 0x000000FF);
     d.colour_foreground.g = (data.g & 0x0000FF00) >> 8;
     d.colour_foreground.b = (data.g & 0x00FF0000) >> 16;
-    d.colour_foreground.a = (data.g & 0xFF000000) >> 32;
+    d.colour_foreground.a = (data.g & 0xFF000000) >> 24;
     d.colour_background.r = (data.b & 0x000000FF);
     d.colour_background.g = (data.b & 0x0000FF00) >> 8;
     d.colour_background.b = (data.b & 0x00FF0000) >> 16;
-    d.colour_background.a = (data.b & 0xFF000000) >> 32;
+    d.colour_background.a = (data.b & 0xFF000000) >> 24;
     d.is_underline =    bool(data.a & 0x00000001);
     return d;
 }

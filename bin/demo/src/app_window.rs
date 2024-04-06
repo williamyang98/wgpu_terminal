@@ -58,7 +58,7 @@ impl<'a> AppWindow<'a> {
         let terminal_user_events = terminal.get_user_event_handler();
         // wgpu
         let wgpu_instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
-            backends: wgpu::util::backend_bits_from_env().unwrap_or_else(|| get_default_wgpu_backends()),
+            backends: wgpu::util::backend_bits_from_env().unwrap_or_else(get_default_wgpu_backends),
             flags: wgpu::InstanceFlags::from_build_config().with_env(),
             dx12_shader_compiler: wgpu::util::dx12_shader_compiler_from_env().unwrap_or_default(),
             gles_minor_version: wgpu::util::gles_minor_version_from_env().unwrap_or_default(),
@@ -87,6 +87,8 @@ impl<'a> AppWindow<'a> {
             .get_default_config(&wgpu_adapter, initial_window_size.width, initial_window_size.height)
             .ok_or("Failed to get default config for wgpu surface")
             .map_err(anyhow::Error::msg)?;
+        // @TODO: avoid srgb conversion to represent colours directly, but is this correct?
+        wgpu_config.format = wgpu::TextureFormat::Bgra8Unorm;
         wgpu_config.present_mode = wgpu::PresentMode::AutoVsync;
         wgpu_surface.configure(&wgpu_device, &wgpu_config);
         let renderer = Renderer::new(&wgpu_config, &wgpu_device);
